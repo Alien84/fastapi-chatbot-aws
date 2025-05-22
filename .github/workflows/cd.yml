@@ -5,7 +5,7 @@ on:
     branches:
       - main    # Production
       - staging # Staging
-      - develop # Development
+      - dev # Development
   workflow_dispatch:
     inputs:
       environment:
@@ -53,6 +53,17 @@ jobs:
     #     run: |
     #       pip install pytest
     #       pytest tests/
+
+      - name: Create stack if it doesn't exist
+        run: |
+            cd infrastructure
+            if ! pulumi stack select ${{ env.ENVIRONMENT }} 2>/dev/null; then
+            pulumi stack init ${{ env.ENVIRONMENT }}
+            pulumi config set aws:region ${{ secrets.AWS_REGION }}
+            # Add other default configurations here
+            fi
+        env:
+            PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
           
       - name: Deploy with Pulumi
         uses: pulumi/actions@v4
