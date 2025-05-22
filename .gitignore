@@ -127,8 +127,14 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Database
+*.db
+*.sqlite3
+
 # Environments
 .env
+.env.local
+.env.production
 .venv
 env/
 venv/
@@ -167,8 +173,44 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
 # Ruff stuff:
 .ruff_cache/
 
 # PyPI configuration file
 .pypirc
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Pulumi
+.pulumi/
+Pulumi.*.yaml
+!Pulumi.yaml
+
+# Application specific
+*.log
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Database
+*.db
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
