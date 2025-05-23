@@ -11,11 +11,24 @@ on:
         type: boolean
         default: false
 
+# Required permissions for OIDC token
+permissions:
+  id-token: write   # This is required for requesting the JWT
+  contents: read    # This is required for actions/checkout
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      # Configure AWS credentials using OIDC
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::555576841436:role/GitHubActionsRole  # Replace with your account ID
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CI-${{ github.run_id }}
       
       - name: Check if environment should be cleaned up
         id: check
@@ -53,6 +66,8 @@ jobs:
           pulumi destroy --yes
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # REMOVE THESE LINES - AWS credentials are configured automatically using IAM Role
+          # AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # AWS_REGION: ${{ secrets.AWS_REGION }}  # Keep this if Pulumi needs it explicitly
           AWS_REGION: ${{ secrets.AWS_REGION }}

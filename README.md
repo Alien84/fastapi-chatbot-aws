@@ -228,8 +228,6 @@ aws iam create-access-key --user-name github-actions-deployment
 **Consider using IAM Roles instead of users (Most Secure)**
 
 ```
-
-
 ### Create a GitHub OIDC Identity Provider in AWS: This is the main AWS CLI command that sets up a new OIDC provider in AWS Identity and Access Management (IAM). It allows federated identities (like GitHub Actions) to access AWS resources securely via IAM roles.
 
 aws iam create-open-id-connect-provider \
@@ -251,7 +249,11 @@ aws iam attach-role-policy \
     --role-name GitHubActionsRole \
     --policy-arn arn:aws:iam::555576841436:policy/GitHubActionsDeploymentPolicy
 
-### Update your GitHub Actions workflow to use the role instead of access keys:
+### Update your GitHub Actions workflow to use the role instead of access keys. Check changes in (CI/CD yaml files).
+
+
+
+
 ```
 
 
