@@ -180,24 +180,36 @@ on:
 **2.1. Create an IAM User for GitHub Actions:** Using the AWS Management Console or AWS CLI:
 
 ```
-# Create a deployment user with programmatic access
+### Create a deployment user with programmatic access
 aws iam create-user --user-name github-actions-deployment
 
-# Attach the necessary policies (use more restrictive policies in production)
+### Attach the necessary policies (use more restrictive policies in production)
+
+# Approach 1: manual
 aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/AmazonEC2FullAccess
 aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/AmazonRDSFullAccess
 aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/AmazonVPCFullAccess
 aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite
-aws iam attach-user-policy \
-    --user-name github-actions-deployment \
-    --policy-arn arn:aws:iam::aws:policy/IAMFullAccess
-aws iam attach-user-policy \
-    --user-name github-actions-deployment \
-    --policy-arn arn:aws:iam::aws:policy/AmazonSSMFullAccess
-aws iam attach-user-policy \
-    --user-name github-actions-deployment \
-    --policy-arn arn:aws:iam::aws:policy/AmazonSNSFullAccess
-# Create access keys
+aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/IAMFullAccess
+aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/AmazonSSMFullAccess
+aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/AmazonSNSFullAccess
+
+
+# Approach 2: manual
+	-- Create a custom policy file github-actions-policy.json
+	-- aws iam create-policy --policy-name GitHubActionsDeploymentPolicy --policy-document file://policies/github-actions-policy.json
+	-- detach the old policies
+	-- Attach the new comprehensive policy
+		aws iam attach-user-policy \
+    			--user-name github-actions-deployment \
+    			--policy-arn arn:aws:iam::555576841436:policy/GitHubActionsDeploymentPolicy
+		Replace 555576841436 with your actual AWS account ID
+
+
+
+
+
+### Create access keys
 aws iam create-access-key --user-name github-actions-deployment
 ```
 
