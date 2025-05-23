@@ -80,7 +80,8 @@
                 "sns:RemovePermission",
                 "sns:TagResource",
                 "sns:UntagResource",
-                "sns:ListTagsForResource"
+                "sns:ListTagsForResource",
+                "sns:GetSubscriptionAttributes"
             ],
             "Resource": "*"
         },

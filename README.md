@@ -197,6 +197,12 @@ aws iam attach-user-policy --user-name github-actions-deployment --policy-arn ar
 
 # Approach 2: manual
 	-- Create a custom policy file github-actions-policy.json
+	-- # If you already have the custom policy, update it
+		aws iam create-policy-version \
+    			--policy-arn arn:aws:iam::555576841436:policy/GitHubActionsDeploymentPolicy \
+    			--policy-document file://comprehensive-github-actions-policy.json \
+    			--set-as-default
+	-- # OR create a new one if you prefer
 	-- aws iam create-policy --policy-name GitHubActionsDeploymentPolicy --policy-document file://policies/github-actions-policy.json
 	-- detach the old policies
 	-- Attach the new comprehensive policy
