@@ -141,6 +141,42 @@ tests/
 
 ### 2. Setting Up AWS Authentication for GitHub Actions
 
+Navigate to `.github/workflows/.` Each of these `.yaml` files defines a workflow — they are your CI/CD pipelines.
+
+```
+.github/
+└── workflows/
+    ├── ci.yaml
+    ├── cd.yaml
+    └── deploy-prod.yaml
+```
+
+`ci.yaml` focuses on  **code validation** : linting, testing, building. CI usually runs on every push or PR.
+
+```
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+```
+
+`cd.yaml` handles  **deployment** : pushing artifacts, deploying to AWS, etc. CD might only run on merges to `main`, tags, or manual dispatch. 
+
+   -- By setting tags, CD only runs when you push a release tag like `v1.0.1`.
+
+```
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+```
+
+
+
+
 **2.1. Create an IAM User for GitHub Actions:** Using the AWS Management Console or AWS CLI:
 
 ```
@@ -152,7 +188,15 @@ aws iam attach-user-policy --user-name github-actions-deployment --policy-arn ar
 aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/AmazonRDSFullAccess
 aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/AmazonVPCFullAccess
 aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite
-
+aws iam attach-user-policy \
+    --user-name github-actions-deployment \
+    --policy-arn arn:aws:iam::aws:policy/IAMFullAccess
+aws iam attach-user-policy \
+    --user-name github-actions-deployment \
+    --policy-arn arn:aws:iam::aws:policy/AmazonSSMFullAccess
+aws iam attach-user-policy \
+    --user-name github-actions-deployment \
+    --policy-arn arn:aws:iam::aws:policy/AmazonSNSFullAccess
 # Create access keys
 aws iam create-access-key --user-name github-actions-deployment
 ```

@@ -1,0 +1,58 @@
+name: Cleanup Development Environment
+
+on:
+  schedule:
+    # Run every day at 6 PM UTC (adjust for your timezone)
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      force_cleanup:
+        description: 'Force cleanup even if recently used'
+        type: boolean
+        default: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Check if environment should be cleaned up
+        id: check
+        run: |
+          # Check when the dev environment was last deployed
+          LAST_DEPLOYMENT=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/deployments" | \
+            jq -r '.[] | select(.environment=="dev") | .created_at' | head -1)
+          
+          if [ "$LAST_DEPLOYMENT" != "null" ] && [ -n "$LAST_DEPLOYMENT" ]; then
+            HOURS_AGO=$((($(date +%s) - $(date -d "$LAST_DEPLOYMENT" +%s)) / 3600))
+            echo "Last deployment was $HOURS_AGO hours ago"
+            
+            # Only cleanup if older than 24 hours (unless forced)
+            if [ $HOURS_AGO -gt 24 ] || [ "${{ github.event.inputs.force_cleanup }}" == "true" ]; then
+              echo "should_cleanup=true" >> $GITHUB_OUTPUT
+              echo "cleanup_reason=Environment unused for $HOURS_AGO hours" >> $GITHUB_OUTPUT
+            else
+              echo "should_cleanup=false" >> $GITHUB_OUTPUT
+              echo "Environment was used recently, skipping cleanup"
+            fi
+          else
+            echo "should_cleanup=false" >> $GITHUB_OUTPUT
+            echo "No deployment history found"
+          fi
+          
+      - name: Destroy Development Environment
+        if: steps.check.outputs.should_cleanup == 'true'
+        run: |
+          cd infrastructure
+          echo "🧹 Cleaning up development environment..."
+          echo "Reason: ${{ steps.check.outputs.cleanup_reason }}"
+          
+          pulumi stack select dev
+          pulumi destroy --yes
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}

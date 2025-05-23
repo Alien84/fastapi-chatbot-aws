@@ -1,0 +1,113 @@
+name: Destroy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          # Note: Intentionally exclude prod for safety
+      confirmation:
+        description: 'Type "DESTROY" to confirm'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for destruction'
+        required: true
+        type: string
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}-destroy  # Requires approval
+    
+    steps:
+      - name: Validate Confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirmation }}" != "DESTROY" ]; then
+            echo "❌ Confirmation failed. You must type 'DESTROY' exactly."
+            exit 1
+          fi
+          echo "✅ Confirmation validated"
+          
+      - name: Log Destruction Request
+        run: |
+          echo "🚨 INFRASTRUCTURE DESTRUCTION REQUESTED"
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Requested by: ${{ github.actor }}"
+          echo "Reason: ${{ github.event.inputs.reason }}"
+          echo "Timestamp: $(date)"
+          
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pulumi pulumi-aws
+          
+      - name: Backup State Before Destruction
+        run: |
+          cd infrastructure
+          echo "Creating backup of Pulumi state..."
+          pulumi stack select ${{ github.event.inputs.environment }}
+          pulumi stack export > backup-${{ github.event.inputs.environment }}-$(date +%Y%m%d-%H%M%S).json
+          echo "✅ State backup created"
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          
+      - name: List Resources to be Destroyed
+        run: |
+          cd infrastructure
+          echo "📋 Resources that will be destroyed:"
+          pulumi preview --stack ${{ github.event.inputs.environment }} --diff
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          
+      - name: Destroy Infrastructure
+        run: |
+          cd infrastructure
+          echo "🔥 Starting infrastructure destruction..."
+          pulumi destroy --stack ${{ github.event.inputs.environment }} --yes
+          echo "✅ Infrastructure destroyed successfully"
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          
+      - name: Notify Destruction Complete
+        if: success()
+        run: |
+          echo "### 🔥 Infrastructure Destroyed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Destroyed by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Reason:** ${{ github.event.inputs.reason }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp:** $(date)" >> $GITHUB_STEP_SUMMARY
+          
+      # Optional: Send Slack notification
+      - name: Send Slack Notification
+        if: success()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_CHANNEL: infrastructure-alerts
+          SLACK_COLOR: warning
+          SLACK_TITLE: "🔥 Infrastructure Destroyed"
+          SLACK_MESSAGE: |
+            Environment: ${{ github.event.inputs.environment }}
+            Destroyed by: ${{ github.actor }}
+            Reason: ${{ github.event.inputs.reason }}
+          SLACK_ICON: ⚠️
