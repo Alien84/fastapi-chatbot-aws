@@ -206,9 +206,6 @@ aws iam attach-user-policy --user-name github-actions-deployment --policy-arn ar
 		Replace 555576841436 with your actual AWS account ID
 
 
-
-
-
 ### Create access keys
 aws iam create-access-key --user-name github-actions-deployment
 ```

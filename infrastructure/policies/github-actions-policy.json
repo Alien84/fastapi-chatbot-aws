@@ -43,7 +43,8 @@
                 "iam:ListPolicyVersions",
                 "iam:CreatePolicyVersion",
                 "iam:DeletePolicyVersion",
-                "iam:SetDefaultPolicyVersion"
+                "iam:SetDefaultPolicyVersion",
+                "iam:ListRolePolicies"
             ],
             "Resource": "*"
         },
