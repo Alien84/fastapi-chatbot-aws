@@ -103,4 +103,4 @@ jobs:
           SLACK_COLOR: good
           SLACK_TITLE: "Deployment Successful: ${{ env.ENVIRONMENT }}"
           SLACK_MESSAGE: "FastAPI chatbot deployed to ${{ env.ENVIRONMENT }} environment successfully"
-          SLACK_ICON: https://github.com/pulumi/pulumi/blob/master/favicon.ico
+          SLACK_ICON: https://github.com/pulumi/pulumi/blob/master/favicon.ico 
