@@ -18,6 +18,12 @@ on:
           - staging
           - prod
 
+# ADD THIS: Required permissions for OIDC token
+permissions:
+  id-token: write   # This is required for requesting the JWT
+  contents: read    # This is required for actions/checkout
+
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -38,6 +44,14 @@ jobs:
           fi
       
       - uses: actions/checkout@v3
+
+      # ADD THIS: Configure AWS credentials using OIDC
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::555576841436:role/GitHubActionsRole  # Replace with your account ID
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-${{ github.run_id }}
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -73,8 +87,10 @@ jobs:
           work-dir: infrastructure
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # REMOVE THESE LINES - AWS credentials are now configured automatically
+          # AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # AWS_REGION: ${{ secrets.AWS_REGION }}  # Keep this if Pulumi needs it explicitly
           AWS_REGION: ${{ secrets.AWS_REGION }}
           
       - name: Send deployment notification

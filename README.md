@@ -186,6 +186,15 @@ aws iam create-user --user-name github-actions-deployment
 ### Attach the necessary policies (use more restrictive policies in production)
 
 # Approach 1: manual
+aws iam attach-user-policy \
+    --user-name github-actions-deployment \
+    --policy-arn arn:aws:iam::aws:policy/PowerUserAccess
+
+aws iam attach-user-policy \
+    --user-name github-actions-deployment \
+    --policy-arn arn:aws:iam::aws:policy/IAMFullAccess
+
+# You may need to attach following policies, if you get any error.
 aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/AmazonEC2FullAccess
 aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/AmazonRDSFullAccess
 aws iam attach-user-policy --user-name github-actions-deployment --policy-arn arn:aws:iam::aws:policy/AmazonVPCFullAccess
@@ -215,6 +224,38 @@ aws iam attach-user-policy --user-name github-actions-deployment --policy-arn ar
 ### Create access keys
 aws iam create-access-key --user-name github-actions-deployment
 ```
+
+**Consider using IAM Roles instead of users (Most Secure)**
+
+```
+
+
+### Create a GitHub OIDC Identity Provider in AWS: This is the main AWS CLI command that sets up a new OIDC provider in AWS Identity and Access Management (IAM). It allows federated identities (like GitHub Actions) to access AWS resources securely via IAM roles.
+
+aws iam create-open-id-connect-provider \
+    --url https://token.actions.githubusercontent.com \
+    --client-id-list sts.amazonaws.com \
+    --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+
+### Create a role for GitHub Actions
+
+-- Create github-actions-trust-policy.json
+
+# Create role
+aws iam create-role \
+    --role-name GitHubActionsRole \
+    --assume-role-policy-document file://policies/github-actions-trust-policy.json
+
+# Attach the policy we created earlier
+aws iam attach-role-policy \
+    --role-name GitHubActionsRole \
+    --policy-arn arn:aws:iam::555576841436:policy/GitHubActionsDeploymentPolicy
+
+### Update your GitHub Actions workflow to use the role instead of access keys:
+```
+
+
+
 
 **2.2 Store AWS Credentials as GitHub Secrets:**
 Go to your GitHub repository:
