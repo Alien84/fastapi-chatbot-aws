@@ -86,7 +86,7 @@ def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
     public_subnet_a = aws.ec2.Subnet(
         f"{name}-{stack_name}-public-subnet-a",
         vpc_id=vpc.id,
-        cidr_block="10.0.1.0/24",
+        cidr_block=f"10.{get_vpc_cidr_offset(stack_name)}.1.0/24",
         availability_zone=f"{aws.config.region}a",
         map_public_ip_on_launch=True,
         tags={
@@ -99,7 +99,7 @@ def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
     public_subnet_b = aws.ec2.Subnet(
         f"{name}-{stack_name}-public-subnet-b",
         vpc_id=vpc.id,
-        cidr_block="10.0.2.0/24",
+        cidr_block=f"10.{get_vpc_cidr_offset(stack_name)}.2.0/24",
         availability_zone=f"{aws.config.region}b",
         map_public_ip_on_launch=True,
         tags={
@@ -112,7 +112,7 @@ def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
     private_subnet_a = aws.ec2.Subnet(
         f"{name}-{stack_name}-private-subnet-a",
         vpc_id=vpc.id,
-        cidr_block="10.0.3.0/24",
+        cidr_block=f"10.{get_vpc_cidr_offset(stack_name)}.3.0/24",
         availability_zone=f"{aws.config.region}a",
         tags={
             "Name": f"{name}-private-subnet-a", 
@@ -124,7 +124,7 @@ def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
     private_subnet_b = aws.ec2.Subnet(
         f"{name}-{stack_name}-private-subnet-b",
         vpc_id=vpc.id,
-        cidr_block="10.0.4.0/24",
+        cidr_block=f"10.{get_vpc_cidr_offset(stack_name)}.4.0/24",
         availability_zone=f"{aws.config.region}b",
         tags={
             "Name": f"{name}-private-subnet-b", 
