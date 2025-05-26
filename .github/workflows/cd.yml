@@ -17,6 +17,10 @@ on:
           - dev
           - staging
           - prod
+      confirm:
+        description: 'Type "DEPLOY" to confirm production deployment'
+        required: true
+        type: string
 
 # Required permissions for OIDC token
 permissions:
@@ -42,8 +46,37 @@ jobs:
           else
             echo "ENVIRONMENT=dev" >> $GITHUB_ENV
           fi
+
+      # Production deployment confirmation check
+      - name: Validate production deployment confirmation
+        if: env.ENVIRONMENT == 'prod' && github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "DEPLOY" ]; then
+            echo "::error::Production deployment requires confirmation. Please type 'DEPLOY' in the confirm field."
+            exit 1
+          fi
+          echo "✅ Production deployment confirmed"
+
+      - name: Log deployment details
+        run: |
+          echo "🚀 Deploying to environment: ${{ env.ENVIRONMENT }}"
+          echo "Requested by: ${{ github.actor }}"
+          echo "Timestamp: $(date)"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+      # Add production deployment protection
+      - name: Production deployment check
+        if: env.ENVIRONMENT == 'prod'
+        run: |
+          echo "::warning::Deploying to production environment"
+          echo "This deployment requires manual approval in GitHub Actions"
       
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       # Configure AWS credentials using OIDC
       - name: Configure AWS credentials
@@ -54,7 +87,7 @@ jobs:
           role-session-name: GitHubActions-CD-${{ github.run_id }}
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           
@@ -67,20 +100,31 @@ jobs:
     #     run: |
     #       pip install pytest
     #       pytest tests/
+    #   continue-on-error: false  # Fail deployment if tests fail
+
+      # Install Pulumi CLI
+      - name: Install Pulumi CLI
+        uses: pulumi/setup-pulumi@v2
+        with:
+          pulumi-version: 'latest'  # Use a specific version if needed
 
       - name: Create stack if it doesn't exist
         run: |
             cd infrastructure
             if ! pulumi stack select ${{ env.ENVIRONMENT }} 2>/dev/null; then
-            pulumi stack init ${{ env.ENVIRONMENT }}
-            pulumi config set aws:region ${{ secrets.AWS_REGION }}
-            # Add other default configurations here
+              echo "Creating new stack: ${{ env.ENVIRONMENT }}"
+              pulumi stack init ${{ env.ENVIRONMENT }}
+              pulumi config set aws:region ${{ secrets.AWS_REGION }}
+              # Add other default configurations here
+            else
+              echo "Stack ${{ env.ENVIRONMENT }} already exists"
             fi
         env:
             PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
           
       - name: Deploy with Pulumi
-        uses: pulumi/actions@v4
+        id: deploy
+        uses: pulumi/actions@v5
         with:
           command: up
           stack-name: ${{ env.ENVIRONMENT }}
@@ -102,5 +146,33 @@ jobs:
           SLACK_CHANNEL: deployments
           SLACK_COLOR: good
           SLACK_TITLE: "Deployment Successful: ${{ env.ENVIRONMENT }}"
-          SLACK_MESSAGE: "FastAPI chatbot deployed to ${{ env.ENVIRONMENT }} environment successfully"
-          SLACK_ICON: https://github.com/pulumi/pulumi/blob/master/favicon.ico 
+          SLACK_MESSAGE: |
+            "FastAPI chatbot deployed to ${{ env.ENVIRONMENT }} environment successfully"
+
+            **Details:**
+            • Branch: ${{ github.ref_name }}
+            • Commit: ${{ github.sha }}
+            • Triggered by: ${{ github.actor }}
+            • Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SLACK_USERNAME: GitHub Actions
+          SLACK_ICON: https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png
+
+      - name: Send deployment notification (Failure)
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2
+        continue-on-error: true
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          SLACK_CHANNEL: deployments
+          SLACK_COLOR: danger
+          SLACK_TITLE: "❌ Deployment Failed: ${{ env.ENVIRONMENT }}"
+          SLACK_MESSAGE: |
+            FastAPI chatbot deployment to **${{ env.ENVIRONMENT }}** environment failed
+            
+            **Details:**
+            • Branch: ${{ github.ref_name }}
+            • Commit: ${{ github.sha }}
+            • Triggered by: ${{ github.actor }}
+            • Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SLACK_USERNAME: GitHub Actions
+          SLACK_ICON: https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png

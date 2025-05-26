@@ -14,17 +14,25 @@ config = pulumi.Config()
 key_name = config.get("keyName")
 instance_type = config.get("instanceType") or "t2.micro"
 auto_scaling = False
+stack_name = pulumi.get_stack()
+name = 'chatbot'
 
 # Generate a private key
-private_key = tls.PrivateKey("chatbot-private-key",
+private_key = tls.PrivateKey(
+    f"{name}-{stack_name}-private-key",
     algorithm="RSA",
     rsa_bits=4096
 )
 
-key_pair = aws.ec2.KeyPair("chatbot-keypair", 
-    key_name="chatbot-keypair",
+key_pair = aws.ec2.KeyPair(
+    f"{name}-{stack_name}-keypair", 
+    key_name=f"{name}-{stack_name}-keypair",
     public_key=private_key.public_key_openssh,
-    tags={"Name": "chatbot-keypair"}
+    tags={
+        "Name": f"{name}-keypair",
+        "Environment": stack_name,
+        "Project": f"{name}"
+        }
 )
 
 # Steps after deployment
@@ -35,8 +43,6 @@ key_pair = aws.ec2.KeyPair("chatbot-keypair",
 # pulumi stack output private_key_pem --show-secrets > chatbot-keypair.pem
 # chmod 400 chatbot-keypair.pem
 
-
-
 pulumi.export("private_key_id", key_pair.key_pair_id)
 pulumi.export("private_key_pem", private_key.private_key_pem)
 
@@ -44,13 +50,12 @@ pulumi.export("private_key_pem", private_key.private_key_pem)
 with open("user_data.sh", "r") as f:
     user_data_template = f.read()
 
-
 # Create VPC and networking components
-network = create_vpc("chatbot")
+network = create_vpc(name=name, stack_name=stack_name)
 
 # Create a security group for app server within the VPC
 web_sg = aws.ec2.SecurityGroup(
-    "web-sg",
+    f"{name}-{stack_name}-web-sg",
     vpc_id=network["vpc"].id,
     description="Allow web traffic",
     ingress=[
@@ -85,7 +90,7 @@ web_sg = aws.ec2.SecurityGroup(
 
 # Create a security group for db within the VPC
 db_sg = aws.ec2.SecurityGroup(
-    "db-sg",
+    f"{name}-{stack_name}-db-sg",
     vpc_id=network["vpc"].id,
     description="Allow database traffic",
     ingress=[
@@ -104,18 +109,22 @@ db_sg = aws.ec2.SecurityGroup(
             cidr_blocks=["0.0.0.0/0"],
         ),
     ],
-    tags={"Name": "chatbot-db-sg"},
+    tags={
+        "Name": f"{name}-db-sg",
+        "Environment": stack_name,
+        "Project": f"{name}"
+        },
 )
-
 
 
 # Create the RDS instance
 database = create_rds_instance(
-    "chatbot",
+    name,
     network["vpc"].id,
     # [subnet.id for subnet in network["private_subnets"]],
     [subnet.id for subnet in network["public_subnets"]],
     [db_sg.id],
+    stack_name=stack_name
 )
 
 # Create secrets for database credentials
@@ -136,7 +145,7 @@ database = create_rds_instance(
 
 # NOTE -- Method #2: Using AWS Secrets Manager (NOTE this is not free)
 # db_secrets = create_secrets_with_kms(
-#     "chatbot-db-credentials",
+#     f"{name}-{stack_name}-db-credentials",
 #     {
 #         "username": database["username"],
 #         "password": database["password"],
@@ -144,6 +153,7 @@ database = create_rds_instance(
 #         "port": database["instance"].port,
 #         "dbname": database["database"],
 #     },
+#     stack_name=stack_name,
 # )
 # # Export the secret name for reference
 # pulumi.export("db_secret_name", db_secrets["secret"].name)
@@ -164,17 +174,21 @@ db_secrets = create_ssm_secrets(
         "port": database["instance"].port.apply(lambda p: str(p)),
         "dbname": database["database"],
     },
+    stack_name=stack_name,
 )
 
 # Export the secret name for reference
-pulumi.export("db_param_path", "/chatbot/db")
+pulumi.export("db_param_path", f"/{name}/{stack_name}/db")
+
+
+# Process the user data script with SSM parameter path
 
 # If you're using aws.ec2.Instance, you do not need to Base64 encode user_data manually. Pulumi does it for you.
 # If You ARE Using a Launch Template (e.g., for Auto Scaling), AWS expects Base64, but you need to manually wrap it into an Output
 
-# user_data = user_data_template.replace("${DB_PARAM_PATH}", "/chatbot/db")
+# user_data = user_data_template.replace("${DB_PARAM_PATH}", "/{name}/{stack_name}/db")
 user_data = pulumi.Output.secret(
-    user_data_template.replace("${DB_PARAM_PATH}", "/chatbot/db")
+    user_data_template.replace("${DB_PARAM_PATH}", f"/{name}/{stack_name}/db")
 )
 user_data_base64 = user_data.apply(
     lambda data: base64.b64encode(data.encode("utf-8")).decode("utf-8")
@@ -188,7 +202,7 @@ user_data_hash = user_data.apply(
 
 # Create an IAM role for EC2 instances
 ec2_role = aws.iam.Role(
-    "ec2-role",
+    f"{name}-{stack_name}-ec2-role",
     assume_role_policy=json.dumps({
         "Version": "2012-10-17",
         "Statement": [{
@@ -203,7 +217,7 @@ ec2_role = aws.iam.Role(
 
 # NOTE Create a policy for Secrets Manager access
 # secrets_policy = aws.iam.Policy(
-#     "secrets-policy",
+#     f"{name}-{stack_name}-secrets-policy",
 #     policy=pulumi.Output.all(db_secrets["secret"].arn).apply(
 #         lambda args: json.dumps({
 #             "Version": "2012-10-17",
@@ -222,7 +236,7 @@ ec2_role = aws.iam.Role(
 
 # NOTE Create a policy for SSM Parameter Store access instead of Secrets Manager
 secrets_policy = aws.iam.Policy(
-    "ssm-policy",
+    f"{name}-{stack_name}-ssm-policy",
     policy=json.dumps({
         "Version": "2012-10-17",
         "Statement": [{
@@ -233,8 +247,8 @@ secrets_policy = aws.iam.Policy(
                 "ssm:GetParametersByPath",
             ],
             "Resource": [
-                "arn:aws:ssm:eu-west-2:555576841436:parameter/chatbot/db",
-                "arn:aws:ssm:eu-west-2:555576841436:parameter/chatbot/db/*",
+                f"arn:aws:ssm:eu-west-2:555576841436:parameter/{name}/{stack_name}/db",
+                f"arn:aws:ssm:eu-west-2:555576841436:parameter/{name}/{stack_name}/db/*",
             ],
         }],
     }),
@@ -242,21 +256,21 @@ secrets_policy = aws.iam.Policy(
 
 # Attach the policy to the role
 role_policy_attachment = aws.iam.RolePolicyAttachment(
-    "role-policy-attachment",
+    f"{name}-{stack_name}-role-policy-attachment",
     role=ec2_role.name,
     policy_arn=secrets_policy.arn,
 )
 
 # Create a CloudWatch log group
 log_group = aws.cloudwatch.LogGroup(
-    "chatbot-logs",
-    name="/aws/ec2/chatbot",
+    f"{name}-{stack_name}-logs",
+    name=f"/aws/ec2/{name}-{stack_name}",
     retention_in_days=30,
 )
 
 # Update IAM policy to allow CloudWatch Logs access
 logs_policy = aws.iam.Policy(
-    "logs-policy",
+    f"{name}-{stack_name}-logs-policy",
     policy=json.dumps({
         "Version": "2012-10-17",
         "Statement": [{
@@ -273,21 +287,21 @@ logs_policy = aws.iam.Policy(
 
 # Attach the logs policy to the role
 logs_policy_attachment = aws.iam.RolePolicyAttachment(
-    "logs-policy-attachment",
+    f"{name}-{stack_name}logs-policy-attachment",
     role=ec2_role.name,
     policy_arn=logs_policy.arn,
 )
 
 # Create an instance profile
 instance_profile = aws.iam.InstanceProfile(
-    "instance-profile",
+    f"{name}-{stack_name}-instance-profile",
     role=ec2_role.name,
 )
 
 
 # Create an EC2 instance using default vpc
 # instance, security_group = create_ec2_instance(
-#     "chatbot-server",
+#     f"{name}-{stack_name}-server",
 #     instance_type=instance_type,
 #     key_name=key_pair.key_name,
 #     user_data=user_data,
@@ -296,8 +310,8 @@ instance_profile = aws.iam.InstanceProfile(
 
 # Create an SNS topic for notifications
 notification_topic = aws.sns.Topic(
-    "notification-topic",
-    name="chatbot-notifications",
+    f"{name}-{stack_name}-notification-topic",
+    name=f"{name}-{stack_name}-notifications",
 )
 
 # Create an email subscription
@@ -314,7 +328,7 @@ if not auto_scaling:
 
     # Create an EC2 instance in a public subnet
     instance = aws.ec2.Instance(
-        "chatbot-server",
+        f"{name}-{stack_name}-server",
         instance_type=instance_type,
         ami=aws.ec2.get_ami(
             most_recent=True,
@@ -338,15 +352,17 @@ if not auto_scaling:
         # Enable detailed monitoring (1-minute intervals instead of 5)
         monitoring=True,
         tags={
-            "Name": "chatbot-server",
-            "UserDataHash": user_data_hash  # This tag forces instance replacement when user_data changes
+            "Name": f"{name}-server",
+            "Environment": stack_name,
+            "Project": f"{name}",
+            "UserDataHash": user_data_hash  # This tag forces instance replacement when user_data changes,
             },
     )
 
     # Create a CloudWatch dashboard
     dashboard = aws.cloudwatch.Dashboard(
-        "chatbot-dashboard",
-        dashboard_name="ChatbotDashboard",
+        f"{name}-{stack_name}-dashboard",
+        dashboard_name=f"{name}-{stack_name}-Dashboard",
         dashboard_body=pulumi.Output.all(instance.id, database["instance"].id).apply(
             lambda args: json.dumps({
                 "widgets": [
@@ -422,7 +438,7 @@ if not auto_scaling:
                         "width": 24,
                         "height": 6,
                         "properties": {
-                            "query": "SOURCE '/aws/ec2/chatbot' | fields @timestamp, @message\n| sort @timestamp desc\n| limit 100",
+                            "query": f"SOURCE '/aws/ec2/{name}-{stack_name}' | fields @timestamp, @message\n| sort @timestamp desc\n| limit 100",
                             "region": aws.config.region,
                             "title": "Recent Logs",
                             "view": "table"
@@ -435,7 +451,7 @@ if not auto_scaling:
 
     # Create CloudWatch alarms for for the single EC2 instance
     high_cpu_alarm = aws.cloudwatch.MetricAlarm(
-        "high-cpu-alarm",
+        f"{name}-{stack_name}-high-cpu-alarm",
         comparison_operator="GreaterThanThreshold",
         evaluation_periods=2,
         metric_name="CPUUtilization",
@@ -449,7 +465,7 @@ if not auto_scaling:
     )
 
     low_cpu_alarm = aws.cloudwatch.MetricAlarm(
-        "low-cpu-alarm",
+        f"{name}-{stack_name}-low-cpu-alarm",
         comparison_operator="LessThanThreshold",
         evaluation_periods=2,
         metric_name="CPUUtilization",
@@ -464,7 +480,7 @@ if not auto_scaling:
 
     # Create a CloudWatch alarm for RDS high CPU
     rds_cpu_alarm = aws.cloudwatch.MetricAlarm(
-        "rds-cpu-alarm",
+        f"{name}-{stack_name}-rds-cpu-alarm",
         comparison_operator="GreaterThanThreshold",
         evaluation_periods=2,
         metric_name="CPUUtilization",
@@ -478,7 +494,7 @@ if not auto_scaling:
     )
 
     memory_alarm = aws.cloudwatch.MetricAlarm(
-        "memory-alarm",
+        f"{name}-{stack_name}-memory-alarm",
         comparison_operator="GreaterThanThreshold",
         evaluation_periods=2,
         metric_name="mem_used_percent",
@@ -492,7 +508,7 @@ if not auto_scaling:
     )
 
     disk_alarm = aws.cloudwatch.MetricAlarm(
-        "disk-alarm",
+        f"{name}-{stack_name}-disk-alarm",
         comparison_operator="GreaterThanThreshold",
         evaluation_periods=2,
         metric_name="disk_used_percent",
@@ -522,7 +538,7 @@ else:
     # Create a launch template for auto scaling
     # This defines how EC2 instances should be launched
     launch_template = aws.ec2.LaunchTemplate(
-        "chatbot-launch-template",
+        f"{name}-{stack_name}-launch-template",
         image_id=aws.ec2.get_ami(
             most_recent=True,
             owners=["amazon"],
@@ -551,8 +567,9 @@ else:
             aws.ec2.LaunchTemplateTagSpecificationArgs(
                 resource_type="instance",
                 tags={
-                    "Name": "chatbot-server",
-                    "Environment": "production",
+                    "Name": f"{name}-server",
+                    "Environment": stack_name,
+                    "Project": f"{name}",
                     "UserDataHash": user_data_hash,
                 },
             ),
@@ -563,7 +580,7 @@ else:
     # Create a load balancer security group
     # Allows public HTTP (80) and HTTPS (443) traffic to reach the load balancer
     lb_sg = aws.ec2.SecurityGroup(
-        "lb-sg",
+        f"{name}-{stack_name}-lb-sg",
         vpc_id=network["vpc"].id,
         description="Allow web traffic to load balancer",
         ingress=[
@@ -593,7 +610,7 @@ else:
     # Allow web servers to receive traffic from the load balancer
     # Allow Load Balancer to Talk to EC2s: This rule allows the web server security group (web_sg) to accept traffic from the load balancer on port 80.
     web_sg_rule = aws.ec2.SecurityGroupRule(
-        "web-sg-rule-from-lb",
+        f"{name}-{stack_name}-web-sg-rule-from-lb",
         type="ingress",
         from_port=80,
         to_port=80,
@@ -607,19 +624,23 @@ else:
         # Public-facing (not internal)
         # Spread across multiple public subnets
     load_balancer = aws.lb.LoadBalancer(
-        "chatbot-lb",
+        f"{name}-{stack_name}-lb",
         internal=False,
         load_balancer_type="application",
         security_groups=[lb_sg.id],
         subnets=[subnet.id for subnet in network["public_subnets"]],
         enable_deletion_protection=False,
-        tags={"Name": "chatbot-lb"},
+        tags={
+            "Name": f"{name}-lb",
+            "Environment": stack_name,
+            "Project": f"{name}",
+            },
     )
 
     # Create a target group for the ALB
     # Targets are EC2 instances listening on port 80.
     target_group = aws.lb.TargetGroup(
-        "chatbot-tg",
+        f"{name}-{stack_name}-tg",
         port=80,
         protocol="HTTP",
         vpc_id=network["vpc"].id,
@@ -638,7 +659,7 @@ else:
 
     # Create a listener: 1- Listens on port 80 of the ALB. 2- Forwards traffic to the target group.
     listener = aws.lb.Listener(
-        "chatbot-listener",
+        f"{name}-{stack_name}-listener",
         load_balancer_arn=load_balancer.arn,
         port=80,
         default_actions=[
@@ -655,7 +676,7 @@ else:
         # Spreads instances across the public subnets.
         # Attaches to the target group, so traffic can be load-balanced.
     auto_scaling_group = aws.autoscaling.Group(
-        "chatbot-asg",
+        f"{name}-{stack_name}-asg",
         max_size=4,
         min_size=2,
         desired_capacity=2,
@@ -673,7 +694,7 @@ else:
         tags=[
             aws.autoscaling.GroupTagArgs(
                 key="Name",
-                value="chatbot-server",
+                value=f"{name}-server",
                 propagate_at_launch=True,
             ),
         ],
@@ -685,7 +706,7 @@ else:
         # Scale down: Remove 1 instance.
         # Both have a cooldown of 5 minutes (300 seconds).
     scale_up_policy = aws.autoscaling.Policy(
-        "scale-up-policy",
+        f"{name}-{stack_name}-scale-up-policy",
         autoscaling_group_name=auto_scaling_group.name,
         adjustment_type="ChangeInCapacity",
         scaling_adjustment=1,
@@ -693,7 +714,7 @@ else:
     )
 
     scale_down_policy = aws.autoscaling.Policy(
-        "scale-down-policy",
+        f"{name}-{stack_name}-scale-down-policy",
         autoscaling_group_name=auto_scaling_group.name,
         adjustment_type="ChangeInCapacity",
         scaling_adjustment=-1,
@@ -706,7 +727,7 @@ else:
         # Low CPU (<30%) for 2 intervals → scale down.
         # Based on average EC2 CPU usage over 5-minute periods.
     high_cpu_alarm = aws.cloudwatch.MetricAlarm(
-        "high-cpu-alarm",
+        f"{name}-{stack_name}-high-cpu-alarm",
         comparison_operator="GreaterThanThreshold",
         evaluation_periods=2,
         metric_name="CPUUtilization",
@@ -720,7 +741,7 @@ else:
     )
 
     low_cpu_alarm = aws.cloudwatch.MetricAlarm(
-        "low-cpu-alarm",
+        f"{name}-{stack_name}-low-cpu-alarm",
         comparison_operator="LessThanThreshold",
         evaluation_periods=2,
         metric_name="CPUUtilization",
@@ -735,7 +756,7 @@ else:
 
     # Create a CloudWatch alarm for RDS high CPU
     rds_cpu_alarm = aws.cloudwatch.MetricAlarm(
-        "rds-cpu-alarm",
+        f"{name}-{stack_name}-rds-cpu-alarm",
         comparison_operator="GreaterThanThreshold",
         evaluation_periods=2,
         metric_name="CPUUtilization",
@@ -749,7 +770,7 @@ else:
 
     # Create a CloudWatch alarm for high 5xx errors
     error_alarm = aws.cloudwatch.MetricAlarm(
-        "error-alarm",
+        f"{name}-{stack_name}-error-alarm",
         comparison_operator="GreaterThanThreshold",
         evaluation_periods=1,
         metric_name="HTTPCode_ELB_5XX_Count",
@@ -764,8 +785,8 @@ else:
 
     # Create a CloudWatch dashboard
     dashboard = aws.cloudwatch.Dashboard(
-        "chatbot-dashboard",
-        dashboard_name="ChatbotDashboard",
+        f"{name}-{stack_name}-dashboard",
+        dashboard_name=f"{name}-{stack_name}-Dashboard",
         dashboard_body=pulumi.Output.all(
             auto_scaling_group.name, 
             database["instance"].id,
@@ -843,7 +864,7 @@ else:
                         "width": 24,
                         "height": 6,
                         "properties": {
-                            "query": "SOURCE '/aws/ec2/chatbot' | fields @timestamp, @message\n| sort @timestamp desc\n| limit 100",
+                            "query": f"SOURCE '/aws/ec2/{name}-{stack_name}' | fields @timestamp, @message\n| sort @timestamp desc\n| limit 100",
                             "region": aws.config.region,
                             "title": "Recent Logs",
                             "view": "table"

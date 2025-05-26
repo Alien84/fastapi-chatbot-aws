@@ -2,19 +2,23 @@ import pulumi
 import pulumi_aws as aws
 import pulumi_random as random
 
-def create_rds_instance(name, vpc_id, subnet_ids, security_group_ids):
+def create_rds_instance(name, vpc_id, subnet_ids, security_group_ids, stack_name='dev'):
     # Generate a random password for the database
     db_password = random.RandomPassword(
-        f"{name}-password",
+        f"{name}-{stack_name}-password",
         length=16,
         special=False,
     )
     
     # Create a subnet group for the RDS instance
     subnet_group = aws.rds.SubnetGroup(
-        f"{name}-subnet-group",
+        f"{name}-{stack_name}-subnet-group",
         subnet_ids=subnet_ids,
-        tags={"Name": f"{name}-subnet-group"},
+        tags={
+            "Name": f"{name}-subnet-group",
+            "Environment": stack_name,
+            "Project": f"{name}"
+        },
     )
 
     """
@@ -41,9 +45,10 @@ def create_rds_instance(name, vpc_id, subnet_ids, security_group_ids):
     """
 
     # Create a parameter group for PostgreSQL
-    db_parameter_group = aws.rds.ParameterGroup("db-param-group",
+    db_parameter_group = aws.rds.ParameterGroup(
+        f"{name}-{stack_name}-db-param-group",
         family="postgres17",  # Choose the appropriate version
-        description="Parameter group for chatbot PostgreSQL",
+        description="Parameter group for {stack_name} chatbot PostgreSQL database",
         parameters=[
             aws.rds.ParameterGroupParameterArgs(
                 name="log_connections",
@@ -55,14 +60,15 @@ def create_rds_instance(name, vpc_id, subnet_ids, security_group_ids):
             )
         ],
         tags={
-            "Name": "chatbot-db-param-group",
-            "Project": "fastapi-chatbot"
+            "Name": f"{name}-db-param-group",
+            "Environment": stack_name,
+            "Project": f"{name}"
         }
     )
     
     # Create the RDS instance
     db_instance = aws.rds.Instance(
-        f"{name}-db",
+        f"{name}-{stack_name}-db",
         allocated_storage=20,
         storage_type="gp2",
         engine="postgres",
@@ -79,7 +85,11 @@ def create_rds_instance(name, vpc_id, subnet_ids, security_group_ids):
         multi_az=False,  # For production, set to true for high availability
         backup_retention_period=0,  # Disable automated backups for free tier
         apply_immediately=True,
-        tags={"Name": f"{name}-db"},
+        tags={
+            "Name": f"{name}-db",
+            "Environment": stack_name,
+            "Project": f"{name}"
+        },
     )
     
     return {

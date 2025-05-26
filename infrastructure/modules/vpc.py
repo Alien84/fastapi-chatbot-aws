@@ -1,7 +1,16 @@
 import pulumi
 import pulumi_aws as aws
 
-def create_vpc(name, cidr_block="10.0.0.0/16"):
+def get_vpc_cidr_offset(stack_name):
+    """Return different CIDR offsets for different environments."""
+    offsets = {
+        "dev": 0,      # 10.0.0.0/16
+        "staging": 1,  # 10.1.0.0/16
+        "prod": 2,     # 10.2.0.0/16
+    }
+    return offsets.get(stack_name, 0)
+
+def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
     # Create a VPC
 
     """
@@ -26,11 +35,15 @@ def create_vpc(name, cidr_block="10.0.0.0/16"):
     This makes everything harder or even impossible.
     """
     vpc = aws.ec2.Vpc(
-        f"{name}-vpc",
-        cidr_block=cidr_block,
+        f"{name}-{stack_name}-vpc",
+        cidr_block=f"10.{get_vpc_cidr_offset(stack_name)}.0.0/16",
         enable_dns_hostnames=True,
         enable_dns_support=True,
-        tags={"Name": f"{name}-vpc"},
+        tags={
+            "Name": f"{name}-vpc", 
+            "Environment": stack_name,
+            "Project": f"{name}"
+            },
     )
 
     # Create an internet gateway
@@ -41,9 +54,13 @@ def create_vpc(name, cidr_block="10.0.0.0/16"):
         🚫 Cannot be accessed from the internet (no incoming HTTP traffic, no ssh)
     """
     igw = aws.ec2.InternetGateway(
-        f"{name}-igw",
+        f"{name}-{stack_name}-igw",
         vpc_id=vpc.id,
-        tags={"Name": f"{name}-igw"},
+        tags={
+            "Name": f"{name}-igw", 
+            "Environment": stack_name,
+            "Project": f"{name}"
+            },
     )
 
     # Create public and private subnets across two availability zones
@@ -67,37 +84,53 @@ def create_vpc(name, cidr_block="10.0.0.0/16"):
         this means this subnet will be in AZ "a" of region "ew-west-2" 
     """
     public_subnet_a = aws.ec2.Subnet(
-        f"{name}-public-subnet-a",
+        f"{name}-{stack_name}-public-subnet-a",
         vpc_id=vpc.id,
         cidr_block="10.0.1.0/24",
         availability_zone=f"{aws.config.region}a",
         map_public_ip_on_launch=True,
-        tags={"Name": f"{name}-public-subnet-a"},
+        tags={
+            "Name": f"{name}-public-subnet-a", 
+            "Environment": stack_name,
+            "Project": f"{name}"
+            },
     )
 
     public_subnet_b = aws.ec2.Subnet(
-        f"{name}-public-subnet-b",
+        f"{name}-{stack_name}-public-subnet-b",
         vpc_id=vpc.id,
         cidr_block="10.0.2.0/24",
         availability_zone=f"{aws.config.region}b",
         map_public_ip_on_launch=True,
-        tags={"Name": f"{name}-public-subnet-b"},
+        tags={
+            "Name": f"{name}-public-subnet-b", 
+            "Environment": stack_name,
+            "Project": f"{name}"
+            },
     )
 
     private_subnet_a = aws.ec2.Subnet(
-        f"{name}-private-subnet-a",
+        f"{name}-{stack_name}-private-subnet-a",
         vpc_id=vpc.id,
         cidr_block="10.0.3.0/24",
         availability_zone=f"{aws.config.region}a",
-        tags={"Name": f"{name}-private-subnet-a"},
+        tags={
+            "Name": f"{name}-private-subnet-a", 
+            "Environment": stack_name,
+            "Project": f"{name}"
+            },
     )
 
     private_subnet_b = aws.ec2.Subnet(
-        f"{name}-private-subnet-b",
+        f"{name}-{stack_name}-private-subnet-b",
         vpc_id=vpc.id,
         cidr_block="10.0.4.0/24",
         availability_zone=f"{aws.config.region}b",
-        tags={"Name": f"{name}-private-subnet-b"},
+        tags={
+            "Name": f"{name}-private-subnet-b", 
+            "Environment": stack_name,
+            "Project": f"{name}"
+            },
     )
 
     # Create a route table for public subnets
@@ -108,7 +141,7 @@ def create_vpc(name, cidr_block="10.0.0.0/16"):
     Without this route: 🚫 Even with map_public_ip_on_launch=True, your instances would NOT be able to talk to the internet.
     """
     public_rt = aws.ec2.RouteTable(
-        f"{name}-public-rt",
+        f"{name}-{stack_name}-public-rt",
         vpc_id=vpc.id,
         routes=[
             aws.ec2.RouteTableRouteArgs(
@@ -116,18 +149,22 @@ def create_vpc(name, cidr_block="10.0.0.0/16"):
                 gateway_id=igw.id,
             ),
         ],
-        tags={"Name": f"{name}-public-rt"},
+        tags={
+            "Name": f"{name}-public-rt", 
+            "Environment": stack_name,
+            "Project": f"{name}"
+            },
     )
 
     # Associate public subnets with the public route table
     public_rta_a = aws.ec2.RouteTableAssociation(
-        f"{name}-public-rta-a",
+        f"{name}-{stack_name}-public-rta-a",
         subnet_id=public_subnet_a.id,
         route_table_id=public_rt.id,
     )
 
     public_rta_b = aws.ec2.RouteTableAssociation(
-        f"{name}-public-rta-b",
+        f"{name}-{stack_name}-public-rta-b",
         subnet_id=public_subnet_b.id,
         route_table_id=public_rt.id,
     )
