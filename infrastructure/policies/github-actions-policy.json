@@ -30,6 +30,7 @@
                 "iam:DeleteInstanceProfile",
                 "iam:GetInstanceProfile",
                 "iam:ListInstanceProfiles",
+                "iam:ListInstanceProfilesForRole",
                 "iam:AddRoleToInstanceProfile",
                 "iam:RemoveRoleFromInstanceProfile",
                 "iam:CreatePolicy",

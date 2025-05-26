@@ -209,7 +209,7 @@ aws iam attach-user-policy --user-name github-actions-deployment --policy-arn ar
 	-- # If you already have the custom policy, update it
 		aws iam create-policy-version \
     			--policy-arn arn:aws:iam::555576841436:policy/GitHubActionsDeploymentPolicy \
-    			--policy-document file://comprehensive-github-actions-policy.json \
+    			--policy-document file://policies/github-actions-policy.json \
     			--set-as-default
 	-- # OR create a new one if you prefer
 	-- aws iam create-policy --policy-name GitHubActionsDeploymentPolicy --policy-document file://policies/github-actions-policy.json
@@ -239,10 +239,20 @@ aws iam create-open-id-connect-provider \
 
 -- Create github-actions-trust-policy.json
 
-# Create role
+# Create a new role
 aws iam create-role \
     --role-name GitHubActionsRole \
     --assume-role-policy-document file://policies/github-actions-trust-policy.json
+
+# If the role exists, update the policy
+-- # If you already have the custom policy, update it
+		aws iam create-policy-version \
+    			--policy-arn arn:aws:iam::555576841436:policy/GitHubActionsDeploymentPolicy \
+    			--policy-document file://policies/github-actions-policy.json \
+    			--set-as-default
+-- # OR create a new one if you prefer
+-- aws iam create-policy --policy-name GitHubActionsDeploymentPolicy --policy-document file://policies/github-actions-policy.json
+
 
 # Attach the policy we created earlier
 aws iam attach-role-policy \
