@@ -134,16 +134,11 @@ jobs:
       - name: Verify Deployment
         id: verify
         run: |
-          echo "Verifying deployment for environment: ${{ env.ENVIRONMENT }}"
-          # Ensure the Pulumi stack is selected
-          cd infrastructure
-          pulumi stack select ${{ env.ENVIRONMENT }}
-
           # Wait a short time for deployment to stabilize
           sleep 60
           
           # Get the endpoint URL from Pulumi outputs
-          APP_URL=$(cd infrastructure && pulumi stack output application_url)
+          APP_URL=$(pulumi stack output application_url)
           
           # Test if the application is responding properly
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $APP_URL)
