@@ -137,6 +137,9 @@ jobs:
           # Wait a short time for deployment to stabilize
           sleep 60
           
+          pulumi stack select ${{ env.ENVIRONMENT }}
+          echo "Verifying deployment for stack: ${{ env.ENVIRONMENT }}"
+          
           # Get the endpoint URL from Pulumi outputs
           APP_URL=$(pulumi stack output application_url)
           
@@ -152,6 +155,9 @@ jobs:
           fi
           
           echo "Deployment verified successfully"
+        working-directory: infrastructure  # Add this
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
 
       # - name: Run infrastructure tests
       #   run: |
