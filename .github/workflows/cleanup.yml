@@ -47,7 +47,7 @@ jobs:
           echo "Reason: ${{ github.event.inputs.reason }}"
           echo "Timestamp: $(date)"
           
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       # Configure AWS credentials using OIDC
       - name: Configure AWS credentials
@@ -58,7 +58,7 @@ jobs:
           role-session-name: GitHubActions-CI-${{ github.run_id }}
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           

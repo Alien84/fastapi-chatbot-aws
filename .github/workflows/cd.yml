@@ -95,12 +95,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          
-    #   - name: Run unit tests
-    #     run: |
-    #       pip install pytest
-    #       pytest tests/
-    #   continue-on-error: false  # Fail deployment if tests fail
 
       # Install Pulumi CLI
       - name: Install Pulumi CLI
@@ -136,7 +130,78 @@ jobs:
           # AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           # AWS_REGION: ${{ secrets.AWS_REGION }}  # Keep this if Pulumi needs it explicitly
           AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Verify Deployment
+        id: verify
+        run: |
+          echo "Verifying deployment for environment: ${{ env.ENVIRONMENT }}"
+          # Ensure the Pulumi stack is selected
+          cd infrastructure
+          pulumi stack select ${{ env.ENVIRONMENT }}
+
+          # Wait a short time for deployment to stabilize
+          sleep 60
           
+          # Get the endpoint URL from Pulumi outputs
+          APP_URL=$(cd infrastructure && pulumi stack output application_url)
+          
+          # Test if the application is responding properly
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $APP_URL)
+          
+          if [ $HTTP_STATUS -ne 200 ]; then
+            echo "Deployment verification failed with status $HTTP_STATUS"
+            exit 1
+          else
+            echo "Deployment verification successful with status $HTTP_STATUS"
+            echo "Application URL: $APP_URL"
+          fi
+          
+          echo "Deployment verified successfully"
+
+      # - name: Run infrastructure tests
+      #   run: |
+      #     cd infrastructure
+      #     pulumi preview --stack dev --non-interactive
+      #     cd ../tests/infrastructure
+      #     python -m unittest discover
+      #   env:
+      #     PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+      #     # REMOVE THESE LINES - AWS credentials are configured automatically using IAM Role
+      #     # AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     # AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     # AWS_REGION: ${{ secrets.AWS_REGION }}  # Keep this if Pulumi needs it explicitly
+      #     AWS_REGION: ${{ secrets.AWS_REGION }}
+
+    #   - name: Run unit tests
+    #     run: |
+    #       pip install pytest
+    #       pytest tests/
+    #   continue-on-error: false  # Fail deployment if tests fail
+
+      # - name: Rollback on failure
+      #   if: failure() && steps.deploy.outcome == 'success' && steps.verify.outcome == 'failure'
+      #   uses: pulumi/actions@v4
+      #   with:
+      #     command: stack select ${{ env.ENVIRONMENT }} && pulumi stack history --show-secrets=false --json | jq -r '.[1].version' | xargs -I{} pulumi stack select ${{ env.ENVIRONMENT }} && pulumi destroy --target-version={}
+      #     stack-name: ${{ env.ENVIRONMENT }}
+      #     work-dir: infrastructure
+      #   env:
+      #     PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+      #     AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     AWS_REGION: ${{ secrets.AWS_REGION }}
+    
+      # - name: Notify on rollback
+      #   if: failure() && steps.deploy.outcome == 'success' && steps.verify.outcome == 'failure'
+      #   uses: rtCamp/action-slack-notify@v2
+      #   env:
+      #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      #     SLACK_CHANNEL: deployments-alerts
+      #     SLACK_COLOR: danger
+      #     SLACK_TITLE: "Deployment Failed with Rollback: ${{ env.ENVIRONMENT }}"
+      #     SLACK_MESSAGE: "FastAPI chatbot deployment to ${{ env.ENVIRONMENT }} failed verification checks and was rolled back"
+      #     SLACK_ICON: https://github.com/pulumi/pulumi/blob/master/favicon.ico
+
       - name: Send deployment notification
         if: success()
         uses: rtCamp/action-slack-notify@v2
