@@ -55,7 +55,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::555576841436:role/GitHubActionsRole  # Replace with your account ID
           aws-region: ${{ secrets.AWS_REGION }}
-          role-session-name: GitHubActions-CI-${{ github.run_id }}
+          role-session-name: GitHubActions-DestroyInfrastructure-${{ github.run_id }}
       
       - name: Set up Python
         uses: actions/setup-python@v5
