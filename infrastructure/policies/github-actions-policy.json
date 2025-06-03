@@ -110,7 +110,10 @@
                 "ecr:DescribeImages",
                 "ecr:BatchDeleteImage",
                 "ecr:PutLifecyclePolicy",
-                "ecr:GetLifecyclePolicy"
+                "ecr:GetLifecyclePolicy",
+                "ecr:TagResource",       
+                "ecr:UntagResource",
+                "ecr:ListTagsForResource"
             ],
             "Resource": "*"
         }
