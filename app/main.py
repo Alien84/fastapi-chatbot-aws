@@ -8,7 +8,7 @@ from sqlalchemy.pool import QueuePool
 import os
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import boto3
 from botocore.exceptions import ClientError
 from typing import List, Optional
