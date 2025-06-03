@@ -1,0 +1,36 @@
+services:
+  app-debug:
+    build:
+      context: ./app
+      dockerfile: Dockerfile.dev
+    container_name: chatbot-app-debug
+    ports:
+      - "8000:8000"  # FastAPI port
+      - "5678:5678"  # Debug port
+    environment:
+      - DB_HOST=db-debug
+      - DB_PORT=5432
+      - DB_NAME=chatbot
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=password
+    depends_on:
+      - db-debug
+    volumes:
+      - ./app:/app:cached
+    stdin_open: true
+    tty: true
+
+  db-debug:
+    image: postgres:14
+    container_name: chatbot-db-debug
+    environment:
+      POSTGRES_DB: chatbot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"  # Different port (debug vs production) to avoid conflict
+    volumes:
+      - postgres_debug_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_debug_data:

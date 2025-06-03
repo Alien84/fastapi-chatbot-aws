@@ -1,5 +1,5 @@
 from fastapi.testclient import TestClient
-from app.main import app
+from app.main_using_secret_manager import app
 
 client = TestClient(app)
 
