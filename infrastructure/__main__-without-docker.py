@@ -46,44 +46,6 @@ key_pair = aws.ec2.KeyPair(
 pulumi.export("private_key_id", key_pair.key_pair_id)
 pulumi.export("private_key_pem", private_key.private_key_pem)
 
-
-# Create an ECR repository for the application
-ecr_repository = aws.ecr.Repository(
-     f"{name}-{stack_name}-app-repo",
-    name= f"{name}-{stack_name}-app",
-    image_tag_mutability="MUTABLE",
-    image_scanning_configuration=aws.ecr.RepositoryImageScanningConfigurationArgs(
-        scan_on_push=True,
-    ),
-    tags={"Name": "chatbot-app-repository"},
-)
-
-# Create a lifecycle policy to manage image retention
-ecr_lifecycle_policy = aws.ecr.LifecyclePolicy(
-     f"{name}-{stack_name}-app-lifecycle",
-    repository=ecr_repository.name,
-    policy=json.dumps({
-        "rules": [
-            {
-                "rulePriority": 1,
-                "description": "Keep last 10 images",
-                "selection": {
-                    "tagStatus": "tagged",
-                    "tagPrefixList": ["latest"],
-                    "countType": "imageCountMoreThan",
-                    "countNumber": 10
-                },
-                "action": {
-                    "type": "expire"
-                }
-            }
-        ]
-    }),
-)
-
-# Export the ECR repository URL
-pulumi.export("ecr_repository_url", ecr_repository.repository_url)
-
 # Read the user data script
 with open("user_data.sh", "r") as f:
     user_data_template = f.read()
@@ -224,26 +186,9 @@ pulumi.export("db_param_path", f"/{name}/{stack_name}/db")
 # If you're using aws.ec2.Instance, you do not need to Base64 encode user_data manually. Pulumi does it for you.
 # If You ARE Using a Launch Template (e.g., for Auto Scaling), AWS expects Base64, but you need to manually wrap it into an Output
 
-
-
-# user_data = pulumi.Output.secret(
-#     user_data_template.replace("${DB_PARAM_PATH}", f"/{name}/{stack_name}/db")
-# )
-# Create the SSM parameter prefix
-ssm_prefix = pulumi.Output.concat("/", name, "/", stack_name, "/db")
-
-# Process the user data script with environment variables
-user_data = pulumi.Output.all(
-    ssm_prefix,
-    ecr_repository.repository_url,
-    aws.config.region,
-    f"{name}-{stack_name}"
-).apply(
-    lambda args: user_data_template
-    .replace("${DB_SSM_PREFIX}", args[0])
-    .replace("${ECR_REPOSITORY_URL}", args[1])
-    .replace("${AWS_REGION}", args[2])
-    .replace("${name}-${stack_name}", args[3])
+# user_data = user_data_template.replace("${DB_PARAM_PATH}", "/{name}/{stack_name}/db")
+user_data = pulumi.Output.secret(
+    user_data_template.replace("${DB_PARAM_PATH}", f"/{name}/{stack_name}/db")
 )
 user_data_base64 = user_data.apply(
     lambda data: base64.b64encode(data.encode("utf-8")).decode("utf-8")
@@ -253,10 +198,6 @@ user_data_base64 = user_data.apply(
 user_data_hash = user_data.apply(
     lambda data: hashlib.sha256(data.encode('utf-8')).hexdigest()
 )
-# user_data_hash = pulumi.Output.apply(
-#     lambda data: hashlib.md5(data.encode("utf-8")).hexdigest(),
-#     user_data
-# )
 
 
 # Create an IAM role for EC2 instances
@@ -304,7 +245,6 @@ secrets_policy = aws.iam.Policy(
                 "ssm:GetParameter",
                 "ssm:GetParameters",
                 "ssm:GetParametersByPath",
-                "ssm:DescribeParameters"
             ],
             "Resource": [
                 f"arn:aws:ssm:eu-west-2:555576841436:parameter/{name}/{stack_name}/db",
@@ -313,29 +253,6 @@ secrets_policy = aws.iam.Policy(
         }],
     }),
 )
-# Other code for ssm-policy
-# ssm_policy = aws.iam.Policy(
-#     f"{name}-{stack_name}-ssm-policy",
-#     policy=pulumi.Output.all(stack_name).apply(
-#         lambda args: json.dumps({
-#             "Version": "2012-10-17",
-#             "Statement": [
-#                 {
-#                     "Effect": "Allow",
-#                     "Action": [
-#                         "ssm:GetParameter",
-#                         "ssm:GetParameters",
-#                         "ssm:GetParametersByPath",
-#                         "ssm:DescribeParameters"
-#                     ],
-#                     "Resource": [
-#                         f"arn:aws:ssm:{aws.config.region}:*:parameter/{args[0]}/db/*"
-#                     ]
-#                 }
-#             ],
-#         })
-#     ),
-# )
 
 # Attach the policy to the role
 role_policy_attachment = aws.iam.RolePolicyAttachment(
@@ -373,35 +290,6 @@ logs_policy_attachment = aws.iam.RolePolicyAttachment(
     f"{name}-{stack_name}logs-policy-attachment",
     role=ec2_role.name,
     policy_arn=logs_policy.arn,
-)
-
-# Create a policy for ECR access
-ecr_policy = aws.iam.Policy(
-    f"{name}-{stack_name}-ecr-policy",
-    policy=pulumi.Output.all(ecr_repository.arn).apply(
-        lambda args: json.dumps({
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "ecr:GetAuthorizationToken",
-                        "ecr:BatchGetImage",
-                        "ecr:GetDownloadUrlForLayer",
-                        "ecr:BatchCheckLayerAvailability"
-                    ],
-                    "Resource": "*"
-                }
-            ],
-        })
-    ),
-)
-
-# Attach the ECR policy to the EC2 role
-ecr_policy_attachment = aws.iam.RolePolicyAttachment(
-    f"{name}-{stack_name}-ecr-policy-attachment",
-    role=ec2_role.name,
-    policy_arn=ecr_policy.arn,
 )
 
 # Create an instance profile
@@ -644,8 +532,6 @@ if not auto_scaling:
     pulumi.export("db_username", database["username"])
     pulumi.export("db_password", database["password"])
     pulumi.export("db_name", database["database"])
-    pulumi.export("db_ssm_prefix", pulumi.Output.concat("/", stack_name, "/db"))
-    pulumi.export("ecr_repository_url", ecr_repository.repository_url)  
 
 else:
 
@@ -992,5 +878,3 @@ else:
     # Update exports
     pulumi.export("load_balancer_dns", load_balancer.dns_name)
     pulumi.export("application_url", pulumi.Output.concat("http://", load_balancer.dns_name))
-    pulumi.export("db_ssm_prefix", pulumi.Output.concat("/", stack_name, "/db"))
-    pulumi.export("ecr_repository_url", ecr_repository.repository_url)

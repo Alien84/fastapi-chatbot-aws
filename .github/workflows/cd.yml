@@ -1,11 +1,11 @@
 name: CD
 
 on:
-  push:
-    branches:
-      - main    # Production
-      - staging # Staging
-      - dev # Development
+  # push:
+  #   branches:
+  #     - main    # Production
+  #     - staging # Staging
+  #     - dev # Development
   workflow_dispatch:
     inputs:
       environment:
@@ -26,7 +26,6 @@ on:
 permissions:
   id-token: write   # This is required for requesting the JWT
   contents: read    # This is required for actions/checkout
-
 
 jobs:
   deploy:
@@ -100,7 +99,7 @@ jobs:
       - name: Install Pulumi CLI
         uses: pulumi/setup-pulumi@v2
         with:
-          pulumi-version: 'latest'  # Use a specific version if needed
+          pulumi-version: 'latest'
 
       - name: Create stack if it doesn't exist
         run: |

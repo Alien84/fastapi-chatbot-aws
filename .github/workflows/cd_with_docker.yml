@@ -1,0 +1,214 @@
+name: CD
+
+on:
+  # push:
+  #   branches:
+  #     - main    # Production
+  #     - staging # Staging
+  #     - dev # Development
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      confirm:
+        description: 'Type "DEPLOY" to confirm production deployment'
+        required: true
+        type: string
+
+# Required permissions for OIDC token
+permissions:
+  id-token: write   # This is required for requesting the JWT
+  contents: read    # This is required for actions/checkout
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Set environment based on branch or input
+        id: set-environment
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "ENVIRONMENT=${{ github.event.inputs.environment }}" >> $GITHUB_ENV
+          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "ENVIRONMENT=prod" >> $GITHUB_ENV
+          elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
+            echo "ENVIRONMENT=staging" >> $GITHUB_ENV
+          else
+            echo "ENVIRONMENT=dev" >> $GITHUB_ENV
+          fi
+
+      # Production deployment confirmation check
+      - name: Validate production deployment confirmation
+        if: env.ENVIRONMENT == 'prod' && github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "DEPLOY" ]; then
+            echo "::error::Production deployment requires confirmation. Please type 'DEPLOY' in the confirm field."
+            exit 1
+          fi
+          echo "✅ Production deployment confirmed"
+
+      - name: Log deployment details
+        run: |
+          echo "🚀 Deploying to environment: ${{ env.ENVIRONMENT }}"
+          echo "Requested by: ${{ github.actor }}"
+          echo "Timestamp: $(date)"
+          echo "Branch: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+      # Add production deployment protection
+      - name: Production deployment check
+        if: env.ENVIRONMENT == 'prod'
+        run: |
+          echo "::warning::Deploying to production environment"
+          echo "This deployment requires manual approval in GitHub Actions"
+      
+      - uses: actions/checkout@v4
+
+      # Configure AWS credentials using OIDC
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::555576841436:role/GitHubActionsRole  # Replace with your account ID
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-session-name: GitHubActions-CD-${{ github.run_id }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Install Pulumi CLI
+      - name: Install Pulumi CLI
+        uses: pulumi/setup-pulumi@v2
+        with:
+          pulumi-version: 'latest'
+
+      - name: Create stack if it doesn't exist
+        run: |
+            cd infrastructure
+            if ! pulumi stack select ${{ env.ENVIRONMENT }} 2>/dev/null; then
+              echo "Creating new stack: ${{ env.ENVIRONMENT }}"
+              pulumi stack init ${{ env.ENVIRONMENT }}
+              pulumi config set aws:region ${{ secrets.AWS_REGION }}
+              # Add other default configurations here
+            else
+              echo "Stack ${{ env.ENVIRONMENT }} already exists"
+            fi
+        env:
+            PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      # Deploy infrastructure first to ensure ECR repository exists
+      - name: Deploy infrastructure with Pulumi
+        id: deploy-infrastructure
+        uses: pulumi/actions@v5
+        with:
+          command: up
+          stack-name: ${{ env.ENVIRONMENT }}
+          work-dir: infrastructure
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          # REMOVE THESE LINES - AWS credentials are configured automatically using IAM Role
+          # AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # AWS_REGION: ${{ secrets.AWS_REGION }}  # Keep this if Pulumi needs it explicitly
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      # Get ECR repository URL from Pulumi output
+      - name: Get ECR repository URL
+        id: get-ecr-url
+        run: |
+          cd infrastructure
+          pulumi stack select ${{ env.ENVIRONMENT }}
+          ECR_URL=$(pulumi stack output ecr_repository_url)
+          echo "ECR_URL=$ECR_URL" >> $GITHUB_ENV
+          echo "ECR repository URL: $ECR_URL"
+          
+          # Also extract the repository name for cleanup purposes
+          ECR_REPO_NAME=$(echo $ECR_URL | cut -d'/' -f2)
+          echo "ECR_REPO_NAME=$ECR_REPO_NAME" >> $GITHUB_ENV
+          echo "ECR repository name: $ECR_REPO_NAME"
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      # Login to Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Build and push Docker image
+      - name: Build and push Docker image
+        id: build-image
+        run: |
+          cd app
+          
+          echo "Building Docker image..."
+          # Build the Docker image with multiple tags
+          docker build -t $ECR_URL:latest -t $ECR_URL:${{ github.sha }} .
+          
+          echo "Pushing Docker image to ECR..."
+          # Push both tags
+          docker push $ECR_URL:latest
+          docker push $ECR_URL:${{ github.sha }}
+          
+          echo "Docker image pushed successfully"
+          echo "IMAGE_URI=$ECR_URL:${{ github.sha }}" >> $GITHUB_ENV
+
+      # Trigger application deployment on EC2 instances
+      - name: Trigger application deployment
+        id: deploy-app
+        run: |
+          echo "Triggering deployment of new container image..."
+          
+          # Get the Auto Scaling Group name for the environment
+          ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
+            --query "AutoScalingGroups[?contains(Tags[?Key==\`Name\`].Value, \`chatbot\`) && contains(Tags[?Key==\`Environment\`].Value, \`${{ env.ENVIRONMENT }}\`)].AutoScalingGroupName" \
+            --output text)
+          
+          if [ -z "$ASG_NAME" ]; then
+            echo "Auto Scaling Group not found for environment: ${{ env.ENVIRONMENT }}"
+            echo "This might be the first deployment. Skipping instance refresh."
+          else
+            echo "Found Auto Scaling Group: $ASG_NAME"
+            
+            # Start instance refresh to deploy new containers
+            REFRESH_ID=$(aws autoscaling start-instance-refresh \
+              --auto-scaling-group-name $ASG_NAME \
+              --preferences '{
+                "InstanceWarmup": 300,
+                "MinHealthyPercentage": 50,
+                "MaxHealthyPercentage": 200,
+                "CheckpointPercentages": [50],
+                "CheckpointDelay": 300
+              }' \
+              --query 'InstanceRefreshId' \
+              --output text)
+            
+            echo "Started instance refresh: $REFRESH_ID"
+            echo "REFRESH_ID=$REFRESH_ID" >> $GITHUB_ENV
+            echo "ASG_NAME=$ASG_NAME" >> $GITHUB_ENV
+          fi
+
+      # Monitor deployment progress
+      - name: Monitor deployment progress
+        if: env.REFRESH_ID != ''
+        run: |
+          echo "Monitoring instance refresh: $REFRESH_ID"
+          
+          # Monitor the refresh f

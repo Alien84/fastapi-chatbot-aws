@@ -57,8 +57,6 @@ app/
     └── database_service.py  # Database operations
 ```
 
-
-
 ```
 #!/bin/bash
 
@@ -110,7 +108,6 @@ echo "3. Set up your virtual environment"
 echo "4. Install dependencies"
 ```
 
-
 **`tests/` - Test Code**
 
 ```
@@ -137,8 +134,6 @@ tests/
     └── test_services.py     # Service layer tests
 ```
 
-
-
 ### 2. Setting Up AWS Authentication for GitHub Actions
 
 Navigate to `.github/workflows/.` Each of these `.yaml` files defines a workflow — they are your CI/CD pipelines.
@@ -161,7 +156,7 @@ on:
 
 ```
 
-`cd.yaml` handles  **deployment** : pushing artifacts, deploying to AWS, etc. CD might only run on merges to `main`, tags, or manual dispatch. 
+`cd.yaml` handles  **deployment** : pushing artifacts, deploying to AWS, etc. CD might only run on merges to `main`, tags, or manual dispatch.
 
    -- By setting tags, CD only runs when you push a release tag like `v1.0.1`.
 
@@ -173,9 +168,6 @@ on:
   workflow_dispatch:
 
 ```
-
-
-
 
 **2.1. Create an IAM User for GitHub Actions:** Using the AWS Management Console or AWS CLI:
 
@@ -266,9 +258,6 @@ aws iam attach-role-policy \
 
 ```
 
-
-
-
 **2.2 Store AWS Credentials as GitHub Secrets:**
 Go to your GitHub repository:
 
@@ -280,7 +269,6 @@ Go to your GitHub repository:
   * `AWS_SECRET_ACCESS_KEY`: Your IAM user's secret access key
   * `AWS_REGION`: Your preferred AWS region (e.g., `us-west-2`)
   * `PULUMI_ACCESS_TOKEN`: Your Pulumi access token (get this from Pulumi)
-
 
 ### **3. Setting Up Pulumi Configuration**
 
@@ -309,3 +297,205 @@ pulumi stack init prod
 ```
 
 **Configure Pulumi Settings:** Create a `P, Pulumi.staging.yamlulumi.dev.yaml, Pulumi.prod.yaml`
+
+
+Some docker concepts
+
+
+### 5. Containerizing FastAPI Application
+
+**Some Docker commands before going forward:**
+
+```
+# Stop and remove existing containers
+docker compose down
+
+# Optional: Remove volumes if you want a clean slate
+docker compose down -v
+
+# Optional: Clean up unused images
+docker image prune -f
+```
+
+```
+1. Dangling Images
+These are:
+Intermediate layers or leftover images
+Have no name (tag), shown as <none> in docker images
+Usually created when you build new images that replace old ones
+Example:
+$ docker images
+REPOSITORY    TAG       IMAGE ID       CREATED        SIZE
+<none>        <none>    a1b2c3d4e5f6    3 hours ago    300MB
+
+To delete:
+docker image prune -f
+
+2. Unused Tagged Images
+These are:
+Have names (tags)
+Are not currently used by any containers (not even stopped ones)
+
+To delete:
+docker image prune -a -f
+```
+
+
+```
+# Remove the database volume (WARNING: This deletes all data), When: You modified database models and need to recreate the database
+docker-compose down -v
+```
+
+
+```
+# Start container
+docker-compose up --build
+```
+
+
+```
+# Remove the old app image to force rebuild
+docker-compose build --no-cache app
+```
+
+
+```
+# Force rebuild without cache
+docker compose -f docker-compose.yml build --no-cache app
+docker compose -f docker-compose.yml up -d --force-recreate app
+```
+
+
+**Best Practices for Development**
+
+1. **Use Volume Mounts:** Your `docker-compose.yml` already has volume mounts, so small code changes don't require rebuilds
+2. **Layer Caching:** Put less frequently changed commands (like `pip install`) earlier in your Dockerfile
+3. **Development vs Production:** Keep separate Dockerfiles or use multi-stage builds if needed
+4. **Environment Variables:** Use `.env` files for local development configuration
+
+**Step 1:** Create Docker Configuration
+
+    -- Create a Dockerfile
+
+    -- Update your application requirements
+
+    -- Create a Docker Compose file for local development
+
+**Step 2:** Update Application Code for Container Environment
+
+**Step 3:** Set Up Container Registry in infra.
+
+    -- Create an ECR Repository
+
+    -- Update IAM permissions for ECR access
+
+**Step 4:** Update User Data for Docker Deployment
+
+**Step 5:** Update GitHub Actions for Docker Build and Push
+
+
+**For local development and testing the application code**
+
+    -- Option 1. Create a docker container locally.
+
+    Run ./scripts/dev_setup.sh
+
+    -- Option 2. Using VS Code debug mode
+
+The application will be available at [http://localhost:8000](http://localhost:8000).
+
+
+**Rebuilding Containers for Local Development**
+
+```
+chmod +x scripts/dev_rebuild.sh
+chmod +x scripts/dev_logs.sh
+chmod +x scripts/dev_status.sh
+
+# Quick restart for small code changes
+./scripts/dev_rebuild.sh quick
+
+# Normal rebuild for most changes
+./scripts/dev_rebuild.sh
+
+# Clean rebuild for dependency changes
+./scripts/dev_rebuild.sh deps
+
+# Complete reset when things get messy
+./scripts/dev_rebuild.sh reset
+
+# Check status
+./scripts/dev_status.sh
+
+# Watch logs
+./scripts/dev_logs.sh
+
+# Watch specific service logs
+./scripts/dev_logs.sh db
+```
+
+
+**Use development tools `scripts/dev_tools.sh`**
+
+```
+# Format code
+./scripts/dev_tools.sh format
+
+# Run tests
+./scripts/dev_tools.sh test
+
+# Run all quality checks
+./scripts/dev_tools.sh all
+```
+
+### 6. VS Code's debugging capabilities with Docker
+
+1. Create `app/Dockerfile.dev`
+2. Create `app/requirements-dev.txt`
+3. Create `docker-compose.debug.yml`
+4. Create `.vscode/launch.json`
+5. Create `.vscode/tasks.json`
+6. Create `scripts/debug_start.sh`
+7. Create `scripts/debug_stop.sh`
+
+**How to Use Debug Mode**
+
+Method 1: Using Debug Scripts
+
+1. Start debug environment: `./scripts/debug_start.sh`
+2. Set breakpoints in your Python code in VS Code
+3. Select "Debug FastAPI in Docker" and ply debugging method
+4. Stop debug environment: `./scripts/debug_stop.sh`
+
+Method 2: Using VS Code Tasks
+
+1. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac)
+2. Type "Tasks: Run Task"
+3. Select "docker-debug-start"
+4. Attach debugger using the launch configuration
+5. Stop debugging: Run the "docker-debug-stop" task
+
+In both cases, m**ake a request** to `http://localhost:8000/` and test the `/chat` endpoint.
+
+**If the debugger won't attach**
+
+```
+# Check container status
+docker compose -f docker-compose.debug.yml ps
+docker compose -f docker-compose.debug.yml logs app-debug
+
+# Check if ports are in use
+lsof -i :5678
+lsof -i :8000
+
+# If ports are in use, kill the processes or change ports in docker-compose.debug.yml
+```
+
+
+**If you change the code and need to rebuild the model:**
+
+```
+# Force rebuild without cache
+docker compose -f docker-compose.debug.yml build --no-cache app-debug
+docker compose -f docker-compose.debug.yml up -d --force-recreate app-debug
+```
