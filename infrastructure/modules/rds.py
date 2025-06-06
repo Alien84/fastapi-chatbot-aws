@@ -15,7 +15,7 @@ def create_rds_instance(name, vpc_id, subnet_ids, security_group_ids, stack_name
         f"{name}-{stack_name}-subnet-group",
         subnet_ids=subnet_ids,
         tags={
-            "Name": f"{name}-subnet-group",
+            "Name": f"{name}-{stack_name}-subnet-group",
             "Environment": stack_name,
             "Project": f"{name}"
         },
@@ -60,7 +60,7 @@ def create_rds_instance(name, vpc_id, subnet_ids, security_group_ids, stack_name
             )
         ],
         tags={
-            "Name": f"{name}-db-param-group",
+            "Name": f"{name}-{stack_name}-db-param-group",
             "Environment": stack_name,
             "Project": f"{name}"
         }
@@ -86,7 +86,7 @@ def create_rds_instance(name, vpc_id, subnet_ids, security_group_ids, stack_name
         backup_retention_period=0,  # Disable automated backups for free tier
         apply_immediately=True,
         tags={
-            "Name": f"{name}-db",
+            "Name": f"{name}-{stack_name}-db",
             "Environment": stack_name,
             "Project": f"{name}"
         },

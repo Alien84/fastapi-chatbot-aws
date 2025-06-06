@@ -87,6 +87,36 @@ echo "Starting deployment at $(date)"
 echo "Logging into ECR..."
 aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY_URL}
 
+# Wait for the Docker image to be available (CI/CD pipeline might still be running)
+echo "Checking for Docker image availability..."
+MAX_RETRIES=30  # Wait up to 15 minutes (30 * 30 seconds)
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    IMAGE_EXISTS=$(aws ecr describe-images \
+        --repository-name ${ECR_REPOSITORY_NAME} \
+        --image-ids imageTag=latest \
+        --query 'imageDetails[0].imageTags[0]' \
+        --output text 2>/dev/null || echo "None")
+    
+    if [ "$IMAGE_EXISTS" != "None" ] && [ "$IMAGE_EXISTS" != "null" ]; then
+        echo "✅ Docker image found in ECR after $((RETRY_COUNT * 30)) seconds"
+        break
+    else
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        echo "⏳ Attempt $RETRY_COUNT/$MAX_RETRIES: Image not found, waiting 30 seconds..."
+        
+        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "❌ Docker image not found after $((MAX_RETRIES * 30)) seconds"
+            echo "The image will be available after the CI/CD pipeline completes"
+            echo "You can manually run this script later: /opt/${name}-${stack_name}/deploy.sh"
+            exit 0  # Don't fail the user_data script
+        fi
+        sleep 30
+    fi
+done
+
+
 # Pull the latest image
 echo "Pulling latest image..."
 docker compose -f /opt/${name}-${stack_name}/docker-compose.yml pull
@@ -113,9 +143,33 @@ EOF
 
 chmod +x /opt/${name}-${stack_name}/deploy.sh
 
-# Run the initial deployment
+# Create a script to check deployment status
+cat << 'EOF' > /opt/${name}-${stack_name}/check_deployment.sh
+#!/bin/bash
+
+echo "=== Deployment Status Check ==="
+echo "Date: $(date)"
+echo "ECR Repository URL: ${ECR_REPOSITORY_URL}"
+echo ""
+
+# Check if containers are running
+echo "=== Container Status ==="
+docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps
+
+echo ""
+echo "=== Application Health Check ==="
+curl -f http://localhost:8000/health 2>/dev/null && echo "✅ Application is healthy" || echo "❌ Application is not responding"
+
+echo ""
+echo "=== Recent Logs ==="
+docker compose -f /opt/${name}-${stack_name}/docker-compose.yml logs --tail=10
+EOF
+
+chmod +x /opt/${name}-${stack_name}/check_deployment.sh
+
+# Try to run the initial deployment (will skip if image doesn't exist)
 cd /opt/${name}-${stack_name}
-./deploy.sh
+./deploy.sh || echo "Initial deployment skipped - image not available yet"
 
 # Setup CloudWatch agent configuration
 cat << EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
@@ -144,6 +198,12 @@ cat << EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
                         "file_path": "/var/log/nginx/error.log",
                         "log_group_name": "/aws/ec2/${name}-${stack_name}",
                         "log_stream_name": "{instance_id}/nginx-error",
+                        "retention_in_days": 30
+                    },
+                    {
+                        "file_path": "/opt/${name}-${stack_name}/logs/*.log",
+                        "log_group_name": "/aws/ec2/${name}-${stack_name}",
+                        "log_stream_name": "{instance_id}/application",
                         "retention_in_days": 30
                     }
                 ]
@@ -222,7 +282,7 @@ systemctl daemon-reload
 systemctl enable amazon-cloudwatch-agent
 systemctl start amazon-cloudwatch-agent
 
-# Configure Nginx
+# Configure Nginx with a fallback for when the container isn't running
 cat <<EOF > /etc/nginx/conf.d/${name}-${stack_name}.conf
 upstream ${name}-${stack_name}_backend {
     server 127.0.0.1:8000;
@@ -232,7 +292,14 @@ server {
     listen 80;
     server_name _;
 
+    # Fallback page when application is not running
+    location = /app-status {
+        return 200 "Application deployment in progress. Please wait for the CI/CD pipeline to complete.";
+        add_header Content-Type text/plain;
+    }
+
     location / {
+        # Try to proxy to the application, fallback to status page
         proxy_pass http://${name}-${stack_name}_backend;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -240,14 +307,20 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
         
         # Health check timeout
-        proxy_connect_timeout 30s;
+        proxy_connect_timeout 5s;
         proxy_send_timeout 30s;
         proxy_read_timeout 30s;
+        
+        # Fallback when backend is not available
+        error_page 502 503 504 /app-status;
     }
 
     location /health {
         proxy_pass http://${name}-${stack_name}_backend/health;
         access_log off;
+        
+        # Fallback when backend is not available
+        error_page 502 503 504 /app-status;
     }
 }
 EOF
@@ -255,3 +328,6 @@ EOF
 # Start Nginx
 systemctl enable nginx
 systemctl start nginx
+
+echo "User data script completed at $(date)"
+echo "Instance is ready. If no application is running, please run the CI/CD pipeline to deploy the container."
