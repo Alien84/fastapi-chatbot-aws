@@ -9,13 +9,22 @@ from modules.vpc import create_vpc
 from modules.rds import create_rds_instance
 from modules.secrets import create_secrets_with_kms, create_ssm_secrets
 
-# Configuration
-config = pulumi.Config()
-key_name = config.get("keyName")
-instance_type = config.get("instanceType") or "t2.micro"
-auto_scaling = False
+
+
+# Access configuration objects
+aws_config = pulumi.Config("aws")
+infra_config = pulumi.Config("infrastructure")
+
+# Get values
+region = aws_config.require("region") or "eu-west-2"
+instance_type = infra_config.require("instanceType") or "t2.micro"
+key_name = infra_config.require("keyName")
+architecture = infra_config.require("architecture") or "single"  # "single" or "autoscaling"
+name = infra_config.require("name") or "chatbot"
+
 stack_name = pulumi.get_stack()
-name = 'chatbot'
+
+pulumi.export("architecture", architecture)
 
 # Generate a private key
 private_key = tls.PrivateKey(
@@ -29,7 +38,7 @@ key_pair = aws.ec2.KeyPair(
     key_name=f"{name}-{stack_name}-keypair",
     public_key=private_key.public_key_openssh,
     tags={
-        "Name": f"{name}-keypair",
+        "Name": f"{name}-{stack_name}-keypair",
         "Environment": stack_name,
         "Project": f"{name}"
         }
@@ -40,7 +49,7 @@ key_pair = aws.ec2.KeyPair(
 # 2. Save it to a file named "chatbot-keypair.pem"
 # 3. Change permissions: chmod 400 chatbot-keypair.pem
 # 4. SSH into the instance: ssh -i chatbot-keypair.pem ec2-user@<instance-public-ip>
-# pulumi stack output private_key_pem --show-secrets > chatbot-keypair.pem
+# pulumi stack output private_key_pem --show-secrets > chatbot-dev-keypair.pem
 # chmod 400 chatbot-keypair.pem
 
 pulumi.export("private_key_id", key_pair.key_pair_id)
@@ -55,7 +64,7 @@ ecr_repository = aws.ecr.Repository(
     image_scanning_configuration=aws.ecr.RepositoryImageScanningConfigurationArgs(
         scan_on_push=True,
     ),
-    tags={"Name": "chatbot-app-repository"},
+    tags={"Name": f"{name}-{stack_name}-app-repo"},
 )
 
 # Create a lifecycle policy to manage image retention
@@ -148,7 +157,7 @@ db_sg = aws.ec2.SecurityGroup(
         ),
     ],
     tags={
-        "Name": f"{name}-db-sg",
+        "Name": f"{name}-{stack_name}-db-sg",
         "Environment": stack_name,
         "Project": f"{name}"
         },
@@ -233,17 +242,20 @@ pulumi.export("db_param_path", f"/{name}/{stack_name}/db")
 ssm_prefix = pulumi.Output.concat("/", name, "/", stack_name, "/db")
 
 # Process the user data script with environment variables
+# Process the user data script with environment variables
 user_data = pulumi.Output.all(
     ssm_prefix,
     ecr_repository.repository_url,
-    aws.config.region,
-    f"{name}-{stack_name}"
+    ecr_repository.name,
+    aws.config.region
 ).apply(
     lambda args: user_data_template
     .replace("${DB_SSM_PREFIX}", args[0])
     .replace("${ECR_REPOSITORY_URL}", args[1])
-    .replace("${AWS_REGION}", args[2])
-    .replace("${name}-${stack_name}", args[3])
+    .replace("${ECR_REPOSITORY_NAME}", args[2])
+    .replace("${AWS_REGION}", args[3])
+    .replace("${name}", name)  # Make sure to replace these as well
+    .replace("${stack_name}", stack_name)
 )
 user_data_base64 = user_data.apply(
     lambda data: base64.b64encode(data.encode("utf-8")).decode("utf-8")
@@ -404,6 +416,18 @@ ecr_policy_attachment = aws.iam.RolePolicyAttachment(
     policy_arn=ecr_policy.arn,
 )
 
+"""
+to ensure SSM commands work properly through GitHub Actions, you need to make sure your instance has the correct IAM permissions. You'll need to add the SSM managed policy to your IAM role.
+You should also verify that your instance appears in SSM by checking the Systems Manager console or running this AWS CLI command
+aws ssm describe-instance-information --query "InstanceInformationList[?InstanceId=='YOUR_INSTANCE_ID']"
+"""
+# Add SSM permissions to your EC2 IAM role
+ssm_managed_policy_attachment = aws.iam.RolePolicyAttachment(
+    "ssm-managed-policy-attachment",
+    role=ec2_role.name,
+    policy_arn="arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+)
+
 # Create an instance profile
 instance_profile = aws.iam.InstanceProfile(
     f"{name}-{stack_name}-instance-profile",
@@ -435,7 +459,7 @@ email_subscription = aws.sns.TopicSubscription(
 )
 
 
-if not auto_scaling:
+if architecture == "single":
     # Single instance creation:  Uncomment out if you comment out auto-scaling part
 
     # Create an EC2 instance in a public subnet
@@ -458,13 +482,13 @@ if not auto_scaling:
         iam_instance_profile=instance_profile.name,
         user_data=user_data,
         opts=pulumi.ResourceOptions(
-            depends_on=list(db_secrets.values()), # NOTE Pulumi will correctly wait for all the SSM parameters to be created before launching the EC2 instance and running user_data.
+            depends_on=list(db_secrets.values()) + [ecr_repository], # NOTE Pulumi will correctly wait for all the SSM parameters to be created before launching the EC2 instance and running user_data.
             delete_before_replace=True  # Ensures Pulumi destroys and recreates the instance
         ),
         # Enable detailed monitoring (1-minute intervals instead of 5)
         monitoring=True,
         tags={
-            "Name": f"{name}-server",
+            "Name": f"{name}-{stack_name}-server",
             "Environment": stack_name,
             "Project": f"{name}",
             "UserDataHash": user_data_hash  # This tag forces instance replacement when user_data changes,
@@ -674,14 +698,14 @@ else:
             enabled=True,  # Enable detailed monitoring
         ),
         opts=pulumi.ResourceOptions(
-            depends_on=list(db_secrets.values()),
+            depends_on=list(db_secrets.values()) + [ecr_repository],
             delete_before_replace=True  # Ensures Pulumi destroys and recreates the template
         ),
         tag_specifications=[
             aws.ec2.LaunchTemplateTagSpecificationArgs(
                 resource_type="instance",
                 tags={
-                    "Name": f"{name}-server",
+                    "Name": f"{name}-{stack_name}-server",
                     "Environment": stack_name,
                     "Project": f"{name}",
                     "UserDataHash": user_data_hash,
@@ -745,7 +769,7 @@ else:
         subnets=[subnet.id for subnet in network["public_subnets"]],
         enable_deletion_protection=False,
         tags={
-            "Name": f"{name}-lb",
+            "Name": f"{name}-{stack_name}-lb",
             "Environment": stack_name,
             "Project": f"{name}",
             },
@@ -803,7 +827,7 @@ else:
             version="$Latest",
         ),
         opts=pulumi.ResourceOptions(
-            depends_on=[launch_template] + list(db_secrets.values()),
+            depends_on=[launch_template] + list(db_secrets.values()) + [ecr_repository],
         ),
         tags=[
             aws.autoscaling.GroupTagArgs(

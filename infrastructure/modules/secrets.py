@@ -10,7 +10,7 @@ def create_secrets_with_kms(name, secrets_dict, stack_name='dev'):
         deletion_window_in_days=10,
         enable_key_rotation=True,
         tags={
-            "Name": f"{name}-key",
+            "Name": f"{name}-{stack_name}-key",
             "Environment": stack_name,
             "Project": "chatbot"
         }
@@ -22,7 +22,7 @@ def create_secrets_with_kms(name, secrets_dict, stack_name='dev'):
         name=f"{name}-{stack_name}",
         kms_key_id=key.id,
         tags={
-            "Name": f"{name}-secret",
+            "Name": f"{name}-{stack_name}-secret",
             "Environment": stack_name,
             "Project": "chatbot"
         },

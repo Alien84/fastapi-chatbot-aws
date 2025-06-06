@@ -40,7 +40,7 @@ def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
         enable_dns_hostnames=True,
         enable_dns_support=True,
         tags={
-            "Name": f"{name}-vpc", 
+            "Name": f"{name}-{stack_name}-vpc", 
             "Environment": stack_name,
             "Project": f"{name}"
             },
@@ -57,7 +57,7 @@ def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
         f"{name}-{stack_name}-igw",
         vpc_id=vpc.id,
         tags={
-            "Name": f"{name}-igw", 
+            "Name": f"{name}-{stack_name}-igw", 
             "Environment": stack_name,
             "Project": f"{name}"
             },
@@ -90,7 +90,7 @@ def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
         availability_zone=f"{aws.config.region}a",
         map_public_ip_on_launch=True,
         tags={
-            "Name": f"{name}-public-subnet-a", 
+            "Name": f"{name}-{stack_name}-public-subnet-a", 
             "Environment": stack_name,
             "Project": f"{name}"
             },
@@ -103,7 +103,7 @@ def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
         availability_zone=f"{aws.config.region}b",
         map_public_ip_on_launch=True,
         tags={
-            "Name": f"{name}-public-subnet-b", 
+            "Name": f"{name}-{stack_name}-public-subnet-b", 
             "Environment": stack_name,
             "Project": f"{name}"
             },
@@ -115,7 +115,7 @@ def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
         cidr_block=f"10.{get_vpc_cidr_offset(stack_name)}.3.0/24",
         availability_zone=f"{aws.config.region}a",
         tags={
-            "Name": f"{name}-private-subnet-a", 
+            "Name": f"{name}-{stack_name}-private-subnet-a", 
             "Environment": stack_name,
             "Project": f"{name}"
             },
@@ -127,7 +127,7 @@ def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
         cidr_block=f"10.{get_vpc_cidr_offset(stack_name)}.4.0/24",
         availability_zone=f"{aws.config.region}b",
         tags={
-            "Name": f"{name}-private-subnet-b", 
+            "Name": f"{name}-{stack_name}-private-subnet-b", 
             "Environment": stack_name,
             "Project": f"{name}"
             },
@@ -150,7 +150,7 @@ def create_vpc(name, stack_name='dev', cidr_block="10.0.0.0/16"):
             ),
         ],
         tags={
-            "Name": f"{name}-public-rt", 
+            "Name": f"{name}-{stack_name}-public-rt", 
             "Environment": stack_name,
             "Project": f"{name}"
             },
