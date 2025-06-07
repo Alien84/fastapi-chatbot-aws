@@ -16,11 +16,11 @@ aws_config = pulumi.Config("aws")
 infra_config = pulumi.Config("infrastructure")
 
 # Get values
-region = aws_config.require("region") or "eu-west-2"
-instance_type = infra_config.require("instanceType") or "t2.micro"
+region = aws_config.require("region") # "eu-west-2"
+instance_type = infra_config.require("instanceType") # "t2.micro"
 key_name = infra_config.require("keyName")
-architecture = infra_config.require("architecture") or "single"  # "single" or "autoscaling"
-name = infra_config.require("name") or "chatbot"
+architecture = infra_config.require("architecture") #  # "single" or "autoscaling"
+name = infra_config.require("name") # "chatbot"
 
 stack_name = pulumi.get_stack()
 
