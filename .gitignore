@@ -199,8 +199,6 @@ Thumbs.db
 .pulumi/
 # Pulumi.*.yaml
 # !Pulumi.yaml
-github_cert_chain.pem
-github_root_cert.pem
 
 # Application specific
 *.log
@@ -216,3 +214,6 @@ htmlcov/
 # Temporary files
 *.tmp
 *.temp
+infrastructure/chatbot-dev-keypair.pem
+infrastructure/github_cert_chain.pem
+infrastructure/github_root_cert.pem
