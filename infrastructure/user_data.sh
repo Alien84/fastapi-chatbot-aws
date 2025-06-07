@@ -84,7 +84,7 @@ set -e  # Exit on any error
 echo "Starting deployment at $(date)"
 
 # Get ECR login token
-echo "Logging into ECR..."
+echo "Logging into ECR repository...: ${ECR_REPOSITORY_URL}"
 aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY_URL}
 
 # Wait for the Docker image to be available (CI/CD pipeline might still be running)
@@ -99,8 +99,9 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         --query 'imageDetails[0].imageTags[0]' \
         --output text 2>/dev/null || echo "None")
     
+    echo "Image check result: $IMAGE_EXISTS"
     if [ "$IMAGE_EXISTS" != "None" ] && [ "$IMAGE_EXISTS" != "null" ]; then
-        echo "✅ Docker image found in ECR after $((RETRY_COUNT * 30)) seconds"
+        echo "✅ Docker image found in ECR after $((RETRY_COUNT * 30)) seconds in repository ${ECR_REPOSITORY_URL}"
         break
     else
         RETRY_COUNT=$((RETRY_COUNT + 1))

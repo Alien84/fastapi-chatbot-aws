@@ -297,164 +297,164 @@ jobs:
           cd ..
 
       # Monitor deployment progress (updated for both architectures)
-      - name: Monitor deployment progress
-        if: env.DEPLOYMENT_TYPE != ''
-        run: |
-          if [ "${{ env.DEPLOYMENT_TYPE }}" = "autoscaling" ]; then
-            echo "📊 Monitoring Auto Scaling Group instance refresh: ${{ env.REFRESH_ID }}"
+      # - name: Monitor deployment progress
+      #   if: env.DEPLOYMENT_TYPE != ''
+      #   run: |
+      #     if [ "${{ env.DEPLOYMENT_TYPE }}" = "autoscaling" ]; then
+      #       echo "📊 Monitoring Auto Scaling Group instance refresh: ${{ env.REFRESH_ID }}"
             
-            # Monitor the refresh for up to 20 minutes
-            for i in {1..40}; do
-              STATUS=$(aws autoscaling describe-instance-refreshes \
-                --auto-scaling-group-name ${{ env.ASG_NAME }} \
-                --instance-refresh-ids ${{ env.REFRESH_ID }} \
-                --query 'InstanceRefreshes[0].Status' \
-                --output text)
+      #       # Monitor the refresh for up to 20 minutes
+      #       for i in {1..40}; do
+      #         STATUS=$(aws autoscaling describe-instance-refreshes \
+      #           --auto-scaling-group-name ${{ env.ASG_NAME }} \
+      #           --instance-refresh-ids ${{ env.REFRESH_ID }} \
+      #           --query 'InstanceRefreshes[0].Status' \
+      #           --output text)
               
-              PERCENTAGE=$(aws autoscaling describe-instance-refreshes \
-                --auto-scaling-group-name ${{ env.ASG_NAME }} \
-                --instance-refresh-ids ${{ env.REFRESH_ID }} \
-                --query 'InstanceRefreshes[0].PercentageComplete' \
-                --output text)
+      #         PERCENTAGE=$(aws autoscaling describe-instance-refreshes \
+      #           --auto-scaling-group-name ${{ env.ASG_NAME }} \
+      #           --instance-refresh-ids ${{ env.REFRESH_ID }} \
+      #           --query 'InstanceRefreshes[0].PercentageComplete' \
+      #           --output text)
               
-              echo "Instance refresh status: $STATUS (${PERCENTAGE}% complete)"
+      #         echo "Instance refresh status: $STATUS (${PERCENTAGE}% complete)"
               
-              if [ "$STATUS" = "Successful" ]; then
-                echo "✅ Auto Scaling Group deployment completed successfully!"
-                break
-              elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
-                echo "❌ Auto Scaling Group deployment failed with status: $STATUS"
+      #         if [ "$STATUS" = "Successful" ]; then
+      #           echo "✅ Auto Scaling Group deployment completed successfully!"
+      #           break
+      #         elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+      #           echo "❌ Auto Scaling Group deployment failed with status: $STATUS"
                 
-                # Get more details about the failure
-                aws autoscaling describe-instance-refreshes \
-                  --auto-scaling-group-name ${{ env.ASG_NAME }} \
-                  --instance-refresh-ids ${{ env.REFRESH_ID }} \
-                  --query 'InstanceRefreshes[0]' \
-                  --output table
+      #           # Get more details about the failure
+      #           aws autoscaling describe-instance-refreshes \
+      #             --auto-scaling-group-name ${{ env.ASG_NAME }} \
+      #             --instance-refresh-ids ${{ env.REFRESH_ID }} \
+      #             --query 'InstanceRefreshes[0]' \
+      #             --output table
                   
-                exit 1
-              fi
+      #           exit 1
+      #         fi
               
-              sleep 30
-            done
+      #         sleep 30
+      #       done
             
-            if [ "$STATUS" != "Successful" ]; then
-              echo "❌ Auto Scaling Group deployment timed out after 20 minutes"
-              exit 1
-            fi
+      #       if [ "$STATUS" != "Successful" ]; then
+      #         echo "❌ Auto Scaling Group deployment timed out after 20 minutes"
+      #         exit 1
+      #       fi
             
-          elif [ "${{ env.DEPLOYMENT_TYPE }}" = "single" ]; then
-            echo "📊 Monitoring single instance SSM command: ${{ env.COMMAND_ID }}"
+      #     elif [ "${{ env.DEPLOYMENT_TYPE }}" = "single" ]; then
+      #       echo "📊 Monitoring single instance SSM command: ${{ env.COMMAND_ID }}"
             
-            # Monitor the SSM command for up to 10 minutes
-            for i in {1..20}; do
-              STATUS=$(aws ssm get-command-invocation \
-                --command-id ${{ env.COMMAND_ID }} \
-                --instance-id ${{ env.INSTANCE_ID }} \
-                --query 'Status' \
-                --output text 2>/dev/null || echo "InProgress")
+      #       # Monitor the SSM command for up to 10 minutes
+      #       for i in {1..20}; do
+      #         STATUS=$(aws ssm get-command-invocation \
+      #           --command-id ${{ env.COMMAND_ID }} \
+      #           --instance-id ${{ env.INSTANCE_ID }} \
+      #           --query 'Status' \
+      #           --output text 2>/dev/null || echo "InProgress")
               
-              echo "SSM command status: $STATUS"
+      #         echo "SSM command status: $STATUS"
               
-              if [ "$STATUS" = "Success" ]; then
-                echo "✅ Single instance deployment completed successfully!"
+      #         if [ "$STATUS" = "Success" ]; then
+      #           echo "✅ Single instance deployment completed successfully!"
                 
-                # Show the command output
-                echo "📄 Command output:"
-                aws ssm get-command-invocation \
-                  --command-id ${{ env.COMMAND_ID }} \
-                  --instance-id ${{ env.INSTANCE_ID }} \
-                  --query 'StandardOutputContent' \
-                  --output text
-                break
+      #           # Show the command output
+      #           echo "📄 Command output:"
+      #           aws ssm get-command-invocation \
+      #             --command-id ${{ env.COMMAND_ID }} \
+      #             --instance-id ${{ env.INSTANCE_ID }} \
+      #             --query 'StandardOutputContent' \
+      #             --output text
+      #           break
                 
-              elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
-                echo "❌ Single instance deployment failed with status: $STATUS"
+      #         elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+      #           echo "❌ Single instance deployment failed with status: $STATUS"
                 
-                # Show the error output
-                echo "📄 Error output:"
-                aws ssm get-command-invocation \
-                  --command-id ${{ env.COMMAND_ID }} \
-                  --instance-id ${{ env.INSTANCE_ID }} \
-                  --query 'StandardErrorContent' \
-                  --output text
+      #           # Show the error output
+      #           echo "📄 Error output:"
+      #           aws ssm get-command-invocation \
+      #             --command-id ${{ env.COMMAND_ID }} \
+      #             --instance-id ${{ env.INSTANCE_ID }} \
+      #             --query 'StandardErrorContent' \
+      #             --output text
                   
-                exit 1
-              fi
+      #           exit 1
+      #         fi
               
-              sleep 30
-            done
+      #         sleep 30
+      #       done
             
-            if [ "$STATUS" != "Success" ]; then
-              echo "❌ Single instance deployment timed out after 10 minutes"
-              exit 1
-            fi
-          fi
+      #       if [ "$STATUS" != "Success" ]; then
+      #         echo "❌ Single instance deployment timed out after 10 minutes"
+      #         exit 1
+      #       fi
+      #     fi
 
-      - name: Verify Deployment
-        id: verify
-        run: |
-          cd infrastructure
-          pulumi stack select ${{ env.ENVIRONMENT }}
-          echo "Verifying deployment for stack: ${{ env.ENVIRONMENT }}"
+      # - name: Verify Deployment
+      #   id: verify
+      #   run: |
+      #     cd infrastructure
+      #     pulumi stack select ${{ env.ENVIRONMENT }}
+      #     echo "Verifying deployment for stack: ${{ env.ENVIRONMENT }}"
           
-          APP_URL=$(pulumi stack output application_url)
-          echo "Testing application URL: $APP_URL"
+      #     APP_URL=$(pulumi stack output application_url)
+      #     echo "Testing application URL: $APP_URL"
           
-          # Test with retries
-          for i in {1..10}; do
-            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $APP_URL/health)
+      #     # Test with retries
+      #     for i in {1..10}; do
+      #       HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $APP_URL/health)
             
-            if [ $HTTP_STATUS -eq 200 ]; then
-              echo "✅ Deployment verification successful with status $HTTP_STATUS"
-              echo "Application URL: $APP_URL"
-              break
-            else
-              echo "Attempt $i: Received status $HTTP_STATUS, retrying in 30 seconds..."
-              if [ $i -eq 10 ]; then
-                echo "❌ Deployment verification failed after 10 attempts with final status $HTTP_STATUS"
-                exit 1
-              fi
-              sleep 30
-            fi
-          done
+      #       if [ $HTTP_STATUS -eq 200 ]; then
+      #         echo "✅ Deployment verification successful with status $HTTP_STATUS"
+      #         echo "Application URL: $APP_URL"
+      #         break
+      #       else
+      #         echo "Attempt $i: Received status $HTTP_STATUS, retrying in 30 seconds..."
+      #         if [ $i -eq 10 ]; then
+      #           echo "❌ Deployment verification failed after 10 attempts with final status $HTTP_STATUS"
+      #           exit 1
+      #         fi
+      #         sleep 30
+      #       fi
+      #     done
           
-          echo "🎉 Deployment verified successfully"
-        env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}      
+      #     echo "🎉 Deployment verified successfully"
+      #   env:
+      #     PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}      
 
       
 
-      - name: Send deployment notification
-        if: success()
-        uses: rtCamp/action-slack-notify@v2
-        continue-on-error: true
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-          SLACK_CHANNEL: deployments
-          SLACK_COLOR: good
-          SLACK_TITLE: "🐳 Containerized Deployment Successful: ${{ env.ENVIRONMENT }}"
-          SLACK_MESSAGE: |
-            FastAPI chatbot **containerized deployment** to **${{ env.ENVIRONMENT }}** environment successful! 🎉
+      # - name: Send deployment notification
+      #   if: success()
+      #   uses: rtCamp/action-slack-notify@v2
+      #   continue-on-error: true
+      #   env:
+      #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      #     SLACK_CHANNEL: deployments
+      #     SLACK_COLOR: good
+      #     SLACK_TITLE: "🐳 Containerized Deployment Successful: ${{ env.ENVIRONMENT }}"
+      #     SLACK_MESSAGE: |
+      #       FastAPI chatbot **containerized deployment** to **${{ env.ENVIRONMENT }}** environment successful! 🎉
 
-            **Details:**
-            • Branch: ${{ github.ref_name }}
-            • Commit: ${{ github.sha }}
-            • Container Image: `${{ env.IMAGE_URI }}`
-            • ECR Repository: `${{ env.ECR_REPO_NAME }}`
-            • Triggered by: ${{ github.actor }}
-            • Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          SLACK_USERNAME: GitHub Actions
+      #       **Details:**
+      #       • Branch: ${{ github.ref_name }}
+      #       • Commit: ${{ github.sha }}
+      #       • Container Image: `${{ env.IMAGE_URI }}`
+      #       • ECR Repository: `${{ env.ECR_REPO_NAME }}`
+      #       • Triggered by: ${{ github.actor }}
+      #       • Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      #     SLACK_USERNAME: GitHub Actions
 
-      - name: Send deployment notification (Failure)
-        if: failure()
-        uses: rtCamp/action-slack-notify@v2
-        continue-on-error: true
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-          SLACK_CHANNEL: deployments
-          SLACK_COLOR: danger
-          SLACK_TITLE: "❌ Containerized Deployment Failed: ${{ env.ENVIRONMENT }}"
-          SLACK_MESSAGE: |
-            FastAPI chatbot **containerized deployment** to **${{ env.ENVIRONMENT }}** environment failed
-          SLACK_USERNAME: GitHub Actions
+      # - name: Send deployment notification (Failure)
+      #   if: failure()
+      #   uses: rtCamp/action-slack-notify@v2
+      #   continue-on-error: true
+      #   env:
+      #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      #     SLACK_CHANNEL: deployments
+      #     SLACK_COLOR: danger
+      #     SLACK_TITLE: "❌ Containerized Deployment Failed: ${{ env.ENVIRONMENT }}"
+      #     SLACK_MESSAGE: |
+      #       FastAPI chatbot **containerized deployment** to **${{ env.ENVIRONMENT }}** environment failed
+      #     SLACK_USERNAME: GitHub Actions

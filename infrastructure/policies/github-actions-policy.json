@@ -60,6 +60,10 @@
                 "ssm:GetParameterHistory",
                 "ssm:AddTagsToResource",
                 "ssm:RemoveTagsFromResource",
+                "ssm:SendCommand",
+                "ssm:GetCommandInvocation",
+                "ssm:DescribeInstanceInformation",
+                "ssm:ListCommandInvocations",
                 "ssm:ListTagsForResource"
             ],
             "Resource": "*"
