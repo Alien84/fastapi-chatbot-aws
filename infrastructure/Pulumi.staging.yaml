@@ -1,0 +1,5 @@
+config:
+  aws:region: eu-west-2
+  chatbot:instanceType: t2.micro
+  chatbot:minInstances: 2
+  chatbot:maxInstances: 4

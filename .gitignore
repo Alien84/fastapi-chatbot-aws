@@ -197,8 +197,8 @@ Thumbs.db
 
 # Pulumi
 .pulumi/
-Pulumi.*.yaml
-!Pulumi.yaml
+# Pulumi.*.yaml
+# !Pulumi.yaml
 
 # Application specific
 *.log

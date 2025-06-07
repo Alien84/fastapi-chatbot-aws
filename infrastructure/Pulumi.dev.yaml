@@ -1,0 +1,6 @@
+config:
+  aws:region: eu-west-2
+  infrastructure:keyName: chatbot-keypair
+  infrastructure:instanceType: t2.micro
+  infrastructure:architecture: single
+  infrastructure:name: chatbot
