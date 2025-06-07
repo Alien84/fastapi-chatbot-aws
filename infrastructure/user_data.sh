@@ -92,6 +92,8 @@ echo "Checking for Docker image availability..."
 MAX_RETRIES=30  # Wait up to 15 minutes (30 * 30 seconds)
 RETRY_COUNT=0
 
+echo "ECR Repository Name: ${ECR_REPOSITORY_NAME}"
+
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     IMAGE_EXISTS=$(aws ecr describe-images \
         --repository-name ${ECR_REPOSITORY_NAME} \
