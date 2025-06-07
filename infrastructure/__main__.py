@@ -60,13 +60,13 @@ pulumi.export("private_key_pem", private_key.private_key_pem)
 
 # Create an ECR repository for the application
 ecr_repository = aws.ecr.Repository(
-     f"{name}-{stack_name}-app-repo",
+     f"{name}-{stack_name}-app",
     name= f"{name}-{stack_name}-app",
     image_tag_mutability="MUTABLE",
     image_scanning_configuration=aws.ecr.RepositoryImageScanningConfigurationArgs(
         scan_on_push=True,
     ),
-    tags={"Name": f"{name}-{stack_name}-app-repo"},
+    tags={"Name": f"{name}-{stack_name}-app"},
 )
 
 # Create a lifecycle policy to manage image retention
@@ -94,6 +94,7 @@ ecr_lifecycle_policy = aws.ecr.LifecyclePolicy(
 
 # Export the ECR repository URL
 pulumi.export("ecr_repository_url", ecr_repository.repository_url)
+pulumi.export("ecr_repository_name", ecr_repository.name)
 
 # Read the user data script
 with open("user_data.sh", "r") as f:
@@ -671,7 +672,6 @@ if architecture == "single":
     pulumi.export("db_password", database["password"])
     pulumi.export("db_name", database["database"])
     pulumi.export("db_ssm_prefix", pulumi.Output.concat("/", stack_name, "/db"))
-    pulumi.export("ecr_repository_url", ecr_repository.repository_url)  
 
 else:
 
@@ -1019,4 +1019,3 @@ else:
     pulumi.export("load_balancer_dns", load_balancer.dns_name)
     pulumi.export("application_url", pulumi.Output.concat("http://", load_balancer.dns_name))
     pulumi.export("db_ssm_prefix", pulumi.Output.concat("/", stack_name, "/db"))
-    pulumi.export("ecr_repository_url", ecr_repository.repository_url)
