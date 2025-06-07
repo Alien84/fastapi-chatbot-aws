@@ -199,6 +199,8 @@ Thumbs.db
 .pulumi/
 # Pulumi.*.yaml
 # !Pulumi.yaml
+github_cert_chain.pem
+github_root_cert.pem
 
 # Application specific
 *.log
