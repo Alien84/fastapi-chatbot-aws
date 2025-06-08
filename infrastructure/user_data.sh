@@ -84,17 +84,67 @@ set -e  # Exit on any error
 echo "Starting deployment at $(date)"
 
 # Get ECR login token
-echo "Logging into ECR repository...: ${ECR_REPOSITORY_URL}"
+echo "Logging into ECR repository...: ${ECR_REPOSITORY_URL} in region ${AWS_REGION}"
 aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY_URL}
+
+# Extract repository name more reliably
+ECR_REPOSITORY_NAME=$(echo "${ECR_REPOSITORY_URL}" | awk -F'/' '{print $NF}')
+echo "Extracted ECR_REPOSITORY_NAME: ${ECR_REPOSITORY_NAME}"
+
+
+# Try different extraction methods
+METHOD1=$(echo "${ECR_REPOSITORY_URL}" | awk -F'/' '{print $NF}')
+METHOD2=$(echo "${ECR_REPOSITORY_URL}" | sed 's|.*/||')
+METHOD3=$(basename "${ECR_REPOSITORY_URL}")
+
+echo "Method 1 (awk): $METHOD1"
+echo "Method 2 (sed): $METHOD2" 
+echo "Method 3 (basename): $METHOD3"
+
+
+# Verify this repository exists
+echo "🔍 Verifying repository exists..."
+aws ecr describe-repositories --repository-names ${ECR_REPOSITORY_NAME} --region ${AWS_REGION} --output table
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Wait for the Docker image to be available (CI/CD pipeline might still be running)
 echo "Checking for Docker image availability..."
 MAX_RETRIES=30  # Wait up to 15 minutes (30 * 30 seconds)
 RETRY_COUNT=0
 
-echo "ECR Repository Name: ${ECR_REPOSITORY_NAME}"
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+
+    # Method 1: Use list-images instead of describe-images
+    LATEST_TAG_COUNT=$(aws ecr list-images \
+        --repository-name ${ECR_REPOSITORY_NAME} \
+        --region ${AWS_REGION} \
+        --filter tagStatus=TAGGED \
+        --query 'length(imageIds[?imageTag==`latest`])' \
+        --output text 2>/dev/null || echo "0")
+    
+    echo "Number of images with 'latest' tag: $LATEST_TAG_COUNT"
+
+    # Method 2: Check if any images exist at all
+    TOTAL_IMAGES=$(aws ecr list-images \
+        --repository-name ${ECR_REPOSITORY_NAME} \
+        --region ${AWS_REGION} \
+        --query 'length(imageIds)' \
+        --output text 2>/dev/null || echo "0")
+    echo "Total number of images in repository: $TOTAL_IMAGES"
+
+
     IMAGE_EXISTS=$(aws ecr describe-images \
         --repository-name ${ECR_REPOSITORY_NAME} \
         --image-ids imageTag=latest \
