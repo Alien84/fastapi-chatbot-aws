@@ -390,9 +390,9 @@ logs_policy_attachment = aws.iam.RolePolicyAttachment(
     policy_arn=logs_policy.arn,
 )
 
-# Create a policy for ECR access
+# Create a comprehensive ECR policy
 ecr_policy = aws.iam.Policy(
-    f"{name}-{stack_name}-ecr-policy",
+    "ecr-policy",
     policy=pulumi.Output.all(ecr_repository.arn).apply(
         lambda args: json.dumps({
             "Version": "2012-10-17",
@@ -400,12 +400,23 @@ ecr_policy = aws.iam.Policy(
                 {
                     "Effect": "Allow",
                     "Action": [
-                        "ecr:GetAuthorizationToken",
-                        "ecr:BatchGetImage",
-                        "ecr:GetDownloadUrlForLayer",
-                        "ecr:BatchCheckLayerAvailability"
+                        "ecr:GetAuthorizationToken"
                     ],
                     "Resource": "*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ecr:BatchCheckLayerAvailability",
+                        "ecr:GetDownloadUrlForLayer",
+                        "ecr:BatchGetImage",
+                        "ecr:DescribeRepositories",
+                        "ecr:DescribeImages",
+                        "ecr:ListImages",
+                        "ecr:DescribeImageScanFindings",
+                        "ecr:GetRepositoryPolicy"
+                    ],
+                    "Resource": args[0]
                 }
             ],
         })
