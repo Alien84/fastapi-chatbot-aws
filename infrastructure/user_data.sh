@@ -73,7 +73,8 @@ services:
       options:
         awslogs-group: "/aws/ec2/${name}-${stack_name}"
         awslogs-region: "${AWS_REGION}"
-        awslogs-stream-prefix: "${name}-${stack_name}-app"
+        awslogs-stream: "${name}-${stack_name}-app-{{.ID}}"
+        awslogs-create-group: "true"
 EOF
 
 # Create a script to pull and run the latest container
