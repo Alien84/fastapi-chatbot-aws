@@ -92,25 +92,10 @@ ECR_REPOSITORY_NAME=$(echo "${ECR_REPOSITORY_URL}" | awk -F'/' '{print $NF}')
 echo "Extracted ECR_REPOSITORY_NAME: ${ECR_REPOSITORY_NAME}"
 
 
-# Try different extraction methods
-METHOD1=$(echo "${ECR_REPOSITORY_URL}" | awk -F'/' '{print $NF}')
-METHOD2=$(echo "${ECR_REPOSITORY_URL}" | sed 's|.*/||')
-METHOD3=$(basename "${ECR_REPOSITORY_URL}")
-
-echo "Method 1 (awk): $METHOD1"
-echo "Method 2 (sed): $METHOD2" 
-echo "Method 3 (basename): $METHOD3"
-
 
 # Verify this repository exists
 echo "🔍 Verifying repository exists..."
 aws ecr describe-repositories --repository-names ${ECR_REPOSITORY_NAME} --region ${AWS_REGION} --output table
-
-
-
-
-
-
 
 
 
@@ -125,8 +110,7 @@ RETRY_COUNT=0
 
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-
-    # Method 1: Use list-images instead of describe-images
+    # Method 1: Use list-images (this works!)
     LATEST_TAG_COUNT=$(aws ecr list-images \
         --repository-name ${ECR_REPOSITORY_NAME} \
         --region ${AWS_REGION} \
@@ -134,36 +118,19 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
         --query 'length(imageIds[?imageTag==`latest`])' \
         --output text 2>/dev/null || echo "0")
     
-    echo "Number of images with 'latest' tag: $LATEST_TAG_COUNT"
-
-    # Method 2: Check if any images exist at all
-    TOTAL_IMAGES=$(aws ecr list-images \
-        --repository-name ${ECR_REPOSITORY_NAME} \
-        --region ${AWS_REGION} \
-        --query 'length(imageIds)' \
-        --output text 2>/dev/null || echo "0")
-    echo "Total number of images in repository: $TOTAL_IMAGES"
-
-
-    IMAGE_EXISTS=$(aws ecr describe-images \
-        --repository-name ${ECR_REPOSITORY_NAME} \
-        --image-ids imageTag=latest \
-        --query 'imageDetails[0].imageTags[0]' \
-        --output text 2>/dev/null || echo "None")
+    echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES: Images with 'latest' tag: $LATEST_TAG_COUNT"
     
-    echo "Image check result: $IMAGE_EXISTS"
-    if [ "$IMAGE_EXISTS" != "None" ] && [ "$IMAGE_EXISTS" != "null" ]; then
-        echo "✅ Docker image found in ECR after $((RETRY_COUNT * 30)) seconds in repository ${ECR_REPOSITORY_URL}"
+    if [ "$LATEST_TAG_COUNT" -gt 0 ]; then
+        echo "✅ Docker image with 'latest' tag found in ECR after $((RETRY_COUNT * 30)) seconds"
         break
     else
         RETRY_COUNT=$((RETRY_COUNT + 1))
-        echo "⏳ Attempt $RETRY_COUNT/$MAX_RETRIES: Image not found, waiting 30 seconds..."
+        echo "⏳ Image not found, waiting 30 seconds..."
         
         if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
             echo "❌ Docker image not found after $((MAX_RETRIES * 30)) seconds"
-            echo "The image will be available after the CI/CD pipeline completes"
             echo "You can manually run this script later: /opt/${name}-${stack_name}/deploy.sh"
-            exit 0  # Don't fail the user_data script
+            exit 0
         fi
         sleep 30
     fi
