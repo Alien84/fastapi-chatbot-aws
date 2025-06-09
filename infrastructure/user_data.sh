@@ -156,6 +156,8 @@ docker compose -f /opt/${name}-${stack_name}/docker-compose.yml down --remove-or
 echo "Cleaning up stopped containers..."
 docker container prune -f
 
+slepp 20
+
 # Start new containers
 echo "Starting new containers..."
 docker compose -f /opt/${name}-${stack_name}/docker-compose.yml up -d
