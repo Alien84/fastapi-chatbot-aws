@@ -138,6 +138,14 @@ while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
 done
 
 
+# Check if docker compose file exists
+if [ ! -f "/opt/${name}-${stack_name}/docker-compose.yml" ]; then
+    echo "❌ Docker compose file not found!"
+    exit 1
+fi
+
+
+
 # Pull the latest image
 echo "Pulling latest image..."
 docker compose -f /opt/${name}-${stack_name}/docker-compose.yml pull
@@ -150,10 +158,124 @@ docker compose -f /opt/${name}-${stack_name}/docker-compose.yml down
 echo "Starting new containers..."
 docker compose -f /opt/${name}-${stack_name}/docker-compose.yml up -d
 
+
 # Verify containers are running
 echo "Verifying containers..."
-sleep 10
+sleep 15  # Give containers more time to start
+
+# Get container count
+RUNNING_CONTAINERS=$(docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps -q | wc -l)
+echo "Number of containers: $RUNNING_CONTAINERS"
+    
+
+echo "=== Container Status (all containers) ==="
+docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps -a
+echo "=== Container Status (all containers) -- v2 ==="
+docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps -a --format "table {{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+
+echo "=== Container Status (detailed) ==="
+docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps --format table
+
+echo "=== Container Status (JSON) ==="
+docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps --format json
+
+echo "=== Raw Docker Container List ==="
+docker ps -a --filter "name=${name}-${stack_name}" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+
+# Alternative: use docker ps directly
+echo "=== Direct Docker PS Output ==="
+docker ps --filter "label=com.docker.compose.project=${name}-${stack_name}" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+
+# Check container health
+echo "=== Container Health Status ==="
+for container in $(docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps -q); do
+    if [ ! -z "$container" ]; then
+        CONTAINER_NAME=$(docker inspect --format='{{.Name}}' $container | sed 's/\///')
+        CONTAINER_STATUS=$(docker inspect --format='{{.State.Status}}' $container)
+        CONTAINER_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' $container 2>/dev/null || echo "no-healthcheck")
+        echo "Container: $CONTAINER_NAME | Status: $CONTAINER_STATUS | Health: $CONTAINER_HEALTH"
+    fi
+done
+    
+
+
+echo "=== Container Logs (last 20 lines) ==="
+docker compose -f /opt/${name}-${stack_name}/docker-compose.yml logs --tail=20
+
+echo "=== Application Health Check ==="
+for i in {1..5}; do
+    echo "Health check attempt $i/5..."
+    if curl -f http://localhost:8000/health 2>/dev/null; then
+        echo "✅ Application health check passed"
+        break
+    else
+        echo "⏳ Application not ready yet, waiting 10 seconds..."
+        sleep 10
+    fi
+done
+
+
+# Test application connectivity
+echo "=== Application Connectivity Test ==="
+MAX_RETRIES=6
+RETRY_COUNT=0
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    echo "Testing application connectivity (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+    
+    if curl -f -s http://localhost:8000/health > /dev/null; then
+        echo "✅ Application is responding on port 8000"
+        curl -s http://localhost:8000/health | jq . 2>/dev/null || curl -s http://localhost:8000/health
+        break
+    else
+        echo "⏳ Application not responding yet..."
+        if [ $RETRY_COUNT -eq $((MAX_RETRIES - 1)) ]; then
+            echo "❌ Application failed to respond after $MAX_RETRIES attempts"
+            
+            # Additional debugging
+            echo "=== Network Status ==="
+            netstat -tlnp | grep :8000 || echo "No process listening on port 8000"
+            
+            echo "=== Recent Container Logs ==="
+            docker compose -f /opt/${name}-${stack_name}/docker-compose.yml logs --tail=30
+        fi
+        RETRY_COUNT=$((RETRY_COUNT + 1))
+        sleep 15
+    fi
+done
+
+echo "=== Final Container Status ==="
 docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps
+
+
+
+echo "=== Container Logs (Last 50 lines) ==="
+docker compose logs --tail=50
+
+echo ""
+echo "=== Docker Container List ==="
+docker ps -a | grep chatbot
+
+echo ""
+echo "=== Application Health Check ==="
+echo "Testing localhost:8000..."
+curl -v http://localhost:8000/ 2>&1 | head -20
+
+echo ""
+echo "=== Testing Health Endpoint ==="
+curl -v http://localhost:8000/health 2>&1 | head -20
+
+echo ""
+echo "=== Network Connectivity ==="
+netstat -tlnp | grep :8000
+
+echo ""
+echo "=== Environment Variables in Container ==="
+docker compose exec chatbot-dev env | grep -E "(DB_|AWS_)" || echo "Container not running or not accessible"
+
+
+
+
 
 # Clean up unused images
 echo "Cleaning up unused images..."
