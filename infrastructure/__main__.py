@@ -66,7 +66,7 @@ ecr_repository = aws.ecr.Repository(
     image_scanning_configuration=aws.ecr.RepositoryImageScanningConfigurationArgs(
         scan_on_push=True,
     ),
-    force_delete=True  # This allows deletion with images
+    force_delete=True,  # This allows deletion with images
     tags={"Name": f"{name}-{stack_name}-app"},
 )
 
