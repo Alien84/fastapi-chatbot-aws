@@ -90,6 +90,7 @@ ecr_lifecycle_policy = aws.ecr.LifecyclePolicy(
             }
         ]
     }),
+    opts=pulumi.ResourceOptions(depends_on=[ecr_repository])
 )
 
 # Export the ECR repository URL
