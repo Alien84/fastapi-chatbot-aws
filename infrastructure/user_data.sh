@@ -93,15 +93,9 @@ ECR_REPOSITORY_NAME=$(echo "${ECR_REPOSITORY_URL}" | awk -F'/' '{print $NF}')
 echo "Extracted ECR_REPOSITORY_NAME: ${ECR_REPOSITORY_NAME}"
 
 
-
 # Verify this repository exists
 echo "🔍 Verifying repository exists..."
 aws ecr describe-repositories --repository-names ${ECR_REPOSITORY_NAME} --region ${AWS_REGION} --output table
-
-
-
-
-
 
 
 # Wait for the Docker image to be available (CI/CD pipeline might still be running)
@@ -290,6 +284,7 @@ chmod +x /opt/${name}-${stack_name}/deploy.sh
 cat << 'EOF' > /opt/${name}-${stack_name}/check_deployment.sh
 #!/bin/bash
 
+echo "=== ======================= ==="
 echo "=== Deployment Status Check ==="
 echo "Date: $(date)"
 echo "ECR Repository URL: ${ECR_REPOSITORY_URL}"
@@ -313,6 +308,7 @@ chmod +x /opt/${name}-${stack_name}/check_deployment.sh
 # Try to run the initial deployment (will skip if image doesn't exist)
 cd /opt/${name}-${stack_name}
 ./deploy.sh || echo "Initial deployment skipped - image not available yet"
+./check_deployment.sh || echo "Initial deployment skipped - image not available yet"
 
 # Setup CloudWatch agent configuration
 cat << EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
