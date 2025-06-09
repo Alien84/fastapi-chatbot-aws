@@ -146,7 +146,11 @@ docker compose -f /opt/${name}-${stack_name}/docker-compose.yml pull
 
 # Stop and remove old containers
 echo "Stopping old containers..."
-docker compose -f /opt/${name}-${stack_name}/docker-compose.yml down
+docker compose -f /opt/${name}-${stack_name}/docker-compose.yml down --remove-orphans --volumes
+
+# Clean up all stopped containers
+echo "Cleaning up stopped containers..."
+docker container prune -f
 
 # Start new containers
 echo "Starting new containers..."
