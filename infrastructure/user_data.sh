@@ -138,6 +138,10 @@ if [ ! -f "/opt/${name}-${stack_name}/docker-compose.yml" ]; then
     exit 1
 fi
 
+echo ""
+echo "=== Environment Variables in Container ==="
+docker compose exec /opt/${name}-${stack_name} ${name}-${stack_name} env | grep -E "(DB_|AWS_)" || echo "Container not running or not accessible"
+
 
 
 # Pull the latest image
@@ -164,12 +168,9 @@ sleep 15  # Give containers more time to start
 # Get container count
 RUNNING_CONTAINERS=$(docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps -q | wc -l)
 echo "Number of containers: $RUNNING_CONTAINERS"
-    
 
 echo "=== Container Status (all containers) ==="
 docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps -a
-echo "=== Container Status (all containers) -- v2 ==="
-docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps -a --format "table {{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
 
 echo "=== Container Status (detailed) ==="
 docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps --format table
@@ -177,12 +178,21 @@ docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps --format tabl
 echo "=== Container Status (JSON) ==="
 docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps --format json
 
+# Alternative: use docker ps directly
 echo "=== Raw Docker Container List ==="
 docker ps -a --filter "name=${name}-${stack_name}" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
 
-# Alternative: use docker ps directly
-echo "=== Direct Docker PS Output ==="
-docker ps --filter "label=com.docker.compose.project=${name}-${stack_name}" --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"
+echo "=== Container Logs (last 20 lines) ==="
+docker compose -f /opt/${name}-${stack_name}/docker-compose.yml logs --tail=20
+
+echo ""
+echo "=== Docker Container List ==="
+docker ps -a | grep chatbot
+
+echo ""
+echo "=== Network Connectivity ==="
+netstat -tlnp | grep :8000
+
 
 # Check container health
 echo "=== Container Health Status ==="
@@ -195,10 +205,6 @@ for container in $(docker compose -f /opt/${name}-${stack_name}/docker-compose.y
     fi
 done
     
-
-
-echo "=== Container Logs (last 20 lines) ==="
-docker compose -f /opt/${name}-${stack_name}/docker-compose.yml logs --tail=20
 
 echo "=== Application Health Check ==="
 for i in {1..5}; do
@@ -213,7 +219,7 @@ for i in {1..5}; do
 done
 
 
-# Test application connectivity
+# Check application connectivity
 echo "=== Application Connectivity Test ==="
 MAX_RETRIES=6
 RETRY_COUNT=0
@@ -244,35 +250,6 @@ done
 
 echo "=== Final Container Status ==="
 docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps
-
-
-
-echo "=== Container Logs (Last 50 lines) ==="
-docker compose logs --tail=50
-
-echo ""
-echo "=== Docker Container List ==="
-docker ps -a | grep chatbot
-
-echo ""
-echo "=== Application Health Check ==="
-echo "Testing localhost:8000..."
-curl -v http://localhost:8000/ 2>&1 | head -20
-
-echo ""
-echo "=== Testing Health Endpoint ==="
-curl -v http://localhost:8000/health 2>&1 | head -20
-
-echo ""
-echo "=== Network Connectivity ==="
-netstat -tlnp | grep :8000
-
-echo ""
-echo "=== Environment Variables in Container ==="
-docker compose exec chatbot-dev env | grep -E "(DB_|AWS_)" || echo "Container not running or not accessible"
-
-
-
 
 
 # Clean up unused images
