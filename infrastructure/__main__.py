@@ -66,6 +66,7 @@ ecr_repository = aws.ecr.Repository(
     image_scanning_configuration=aws.ecr.RepositoryImageScanningConfigurationArgs(
         scan_on_push=True,
     ),
+    force_delete=True  # This allows deletion with images
     tags={"Name": f"{name}-{stack_name}-app"},
 )
 
@@ -73,23 +74,36 @@ ecr_repository = aws.ecr.Repository(
 ecr_lifecycle_policy = aws.ecr.LifecyclePolicy(
      f"{name}-{stack_name}-app-lifecycle",
     repository=ecr_repository.name,
-    policy=json.dumps({
-        "rules": [
-            {
-                "rulePriority": 1,
-                "description": "Keep last 10 images",
-                "selection": {
-                    "tagStatus": "tagged",
-                    "tagPrefixList": ["latest"],
-                    "countType": "imageCountMoreThan",
-                    "countNumber": 10
-                },
-                "action": {
-                    "type": "expire"
-                }
-            }
-        ]
-    }),
+    # policy=json.dumps({
+    #     "rules": [
+    #         {
+    #             "rulePriority": 1,
+    #             "description": "Keep last 10 images",
+    #             "selection": {
+    #                 "tagStatus": "tagged",
+    #                 "tagPrefixList": ["latest"],
+    #                 "countType": "imageCountMoreThan",
+    #                 "countNumber": 10
+    #             },
+    #             "action": {
+    #                 "type": "expire"
+    #             }
+    #         }
+    #     ]
+    # }),
+    # # Add lifecycle policy to auto-delete old images
+    policy="""{  
+        "rules": [{
+            "rulePriority": 1,
+            "selection": {
+                "tagStatus": "any",
+                "countType": "sinceImagePushed",
+                "countUnit": "days",
+                "countNumber": 1
+            },
+            "action": {"type": "expire"}
+        }]
+    }""",
     opts=pulumi.ResourceOptions(depends_on=[ecr_repository])
 )
 
