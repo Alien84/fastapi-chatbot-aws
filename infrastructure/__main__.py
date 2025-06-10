@@ -8,6 +8,7 @@ from modules.ec2 import create_ec2_instance
 from modules.vpc import create_vpc
 from modules.rds import create_rds_instance
 from modules.secrets import create_secrets_with_kms, create_ssm_secrets
+from modules.lambda_functions import create_message_processor_lambda
 
 
 
@@ -258,6 +259,18 @@ pulumi.export("db_param_path", f"/{name}/{stack_name}/db")
 # )
 # Create the SSM parameter prefix
 ssm_prefix = pulumi.Output.concat("/", name, "/", stack_name, "/db")
+
+
+# Create the Lambda function (add this after creating your VPC and database)
+message_processor_lambda = create_message_processor_lambda(
+    db_ssm_prefix=ssm_prefix,
+    vpc_id=network["vpc"].id,
+    subnet_ids=[subnet.id for subnet in network["private_subnets"]],
+    security_group_id=db_sg.id
+)
+
+# Export the Lambda function name
+pulumi.export("message_processor_lambda_name", message_processor_lambda.name)
 
 # Process the user data script with environment variables
 # Process the user data script with environment variables

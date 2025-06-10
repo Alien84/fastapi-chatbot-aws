@@ -138,10 +138,6 @@ if [ ! -f "/opt/${name}-${stack_name}/docker-compose.yml" ]; then
     exit 1
 fi
 
-echo ""
-echo "=== Environment Variables in Container ==="
-docker compose exec /opt/${name}-${stack_name} ${name}-${stack_name} env | grep -E "(DB_|AWS_)" || echo "Container not running or not accessible"
-
 
 
 # Pull the latest image
@@ -166,6 +162,10 @@ docker compose -f /opt/${name}-${stack_name}/docker-compose.yml up -d
 # Verify containers are running
 echo "Verifying containers..."
 sleep 15  # Give containers more time to start
+
+echo ""
+echo "=== Environment Variables in Container ==="
+docker compose exec /opt/${name}-${stack_name} ${name}-${stack_name} env | grep -E "(DB_|AWS_)" || echo "Container not running or not accessible"
 
 # Get container count
 RUNNING_CONTAINERS=$(docker compose -f /opt/${name}-${stack_name}/docker-compose.yml ps -q | wc -l)
