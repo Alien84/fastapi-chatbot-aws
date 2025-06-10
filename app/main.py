@@ -6,6 +6,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 import os
+import json
 import time
 import logging
 from datetime import datetime, timedelta
@@ -26,7 +27,7 @@ def get_ssm_parameters(parameter_prefix):
         session = boto3.session.Session()
         ssm_client = session.client(
             service_name='ssm',
-            region_name=os.environ.get('AWS_REGION', 'us-west-2')
+            region_name=os.environ.get('AWS_REGION', 'eu-west-2')
         )
         
         # Get all parameters with the given prefix
@@ -90,11 +91,35 @@ def get_database_config():
     logger.error("Database configuration not found in environment or SSM")
     return None
 
+def trigger_message_processing(message_id: int, content: str):
+    """Trigger Lambda function for message processing"""
+    try:
+        lambda_client = boto3.client('lambda', region_name=os.environ.get('AWS_REGION', 'us-west-2'))
+        
+        payload = {
+            'message_id': message_id,
+            'content': content
+        }
+        
+        response = lambda_client.invoke(
+            FunctionName=os.environ.get('MESSAGE_PROCESSOR_LAMBDA_NAME', 'message-processor-lambda'),
+            InvocationType='Event',  # Asynchronous invocation
+            Payload=json.dumps(payload)
+        )
+        
+        logger.info(f"Triggered Lambda processing for message {message_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to trigger Lambda processing: {e}")
+        return False
+    
+
 # Get database configuration
 db_config = get_database_config()
 if not db_config:
     logger.error("Failed to load database configuration")
     raise Exception("Database configuration not found")
+
 
 DATABASE_URL = f"postgresql://{db_config['username']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['dbname']}"
 logger.info("Database configuration loaded successfully")
@@ -214,14 +239,15 @@ def chat(message: Message, db: Session = Depends(get_db)):
     logger.info(f"Chat request received with content length: {len(message.content)}")
     
     try:
-        # Simple echo response for now - replace with actual chatbot logic
         response = f"You said: {message.content}"
         
-        # Store message in database
         db_message = MessageRecord(content=message.content, response=response)
         db.add(db_message)
         db.commit()
         db.refresh(db_message)
+        
+        # Trigger Lambda processing asynchronously
+        trigger_message_processing(db_message.id, message.content)
         
         logger.info(f"Message saved to database with ID: {db_message.id}")
         return ChatResponse(response=response, message_id=db_message.id)
@@ -230,6 +256,29 @@ def chat(message: Message, db: Session = Depends(get_db)):
         logger.error(f"Database error in chat endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to process chat message")
 
+@app.get("/message/{message_id}/sentiment")
+def get_message_sentiment(message_id: int, db: Session = Depends(get_db)):
+    """Get sentiment analysis for a specific message"""
+    try:
+        message = db.query(MessageRecord).filter(MessageRecord.id == message_id).first()
+        
+        if not message:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        return {
+            "message_id": message.id,
+            "content": message.content,
+            "sentiment": getattr(message, 'sentiment', None),
+            "sentiment_confidence": getattr(message, 'sentiment_confidence', None),
+            "analyzed_at": getattr(message, 'analyzed_at', None)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving sentiment: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve sentiment")
+    
+    
 @app.get("/history", response_model=HistoryResponse)
 def get_history(
     limit: int = 50, 
