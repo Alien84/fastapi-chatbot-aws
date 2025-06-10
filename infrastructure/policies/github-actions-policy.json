@@ -12,6 +12,7 @@
                 "cloudwatch:*",
                 "logs:*",
                 "s3:*",
+                "lambda:*",
                 "secretsmanager:*",
                 "kms:*"
             ],
@@ -45,7 +46,8 @@
                 "iam:CreatePolicyVersion",
                 "iam:DeletePolicyVersion",
                 "iam:SetDefaultPolicyVersion",
-                "iam:ListRolePolicies"
+                "iam:ListRolePolicies",
+                "iam:PassRole"
             ],
             "Resource": "*"
         },
@@ -120,6 +122,48 @@
                 "ecr:ListTagsForResource"
             ],
             "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "lambda:CreateFunction",
+                "lambda:DeleteFunction",
+                "lambda:GetFunction",
+                "lambda:GetFunctionConfiguration",
+                "lambda:UpdateFunctionCode",
+                "lambda:UpdateFunctionConfiguration",
+                "lambda:ListVersionsByFunction",
+                "lambda:PublishVersion",
+                "lambda:CreateAlias",
+                "lambda:DeleteAlias",
+                "lambda:GetAlias",
+                "lambda:ListAliases",
+                "lambda:UpdateAlias",
+                "lambda:AddPermission",
+                "lambda:RemovePermission",
+                "lambda:GetPolicy",
+                "lambda:PutFunctionConcurrency",
+                "lambda:DeleteFunctionConcurrency",
+                "lambda:PutProvisionedConcurrencyConfig",
+                "lambda:DeleteProvisionedConcurrencyConfig",
+                "lambda:GetProvisionedConcurrencyConfig",
+                "lambda:ListProvisionedConcurrencyConfigs",
+                "lambda:TagResource",
+                "lambda:UntagResource",
+                "lambda:ListTags"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+                "logs:DescribeLogGroups",
+                "logs:DescribeLogStreams"
+            ],
+            "Resource": "arn:aws:logs:*:*:*"
         }
     ]
 }
