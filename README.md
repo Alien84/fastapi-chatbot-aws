@@ -298,9 +298,7 @@ pulumi stack init prod
 
 **Configure Pulumi Settings:** Create a `P, Pulumi.staging.yamlulumi.dev.yaml, Pulumi.prod.yaml`
 
-
 Some docker concepts
-
 
 ### 5. Containerizing FastAPI Application
 
@@ -340,31 +338,26 @@ To delete:
 docker image prune -a -f
 ```
 
-
 ```
 # Remove the database volume (WARNING: This deletes all data), When: You modified database models and need to recreate the database
 docker-compose down -v
 ```
-
 
 ```
 # Start container
 docker-compose up --build
 ```
 
-
 ```
 # Remove the old app image to force rebuild
 docker-compose build --no-cache app
 ```
-
 
 ```
 # Force rebuild without cache
 docker compose -f docker-compose.yml build --no-cache app
 docker compose -f docker-compose.yml up -d --force-recreate app
 ```
-
 
 **Best Practices for Development**
 
@@ -393,7 +386,6 @@ docker compose -f docker-compose.yml up -d --force-recreate app
 
 **Step 5:** Update GitHub Actions for Docker Build and Push
 
-
 **For local development and testing the application code**
 
     -- Option 1. Create a docker container locally.
@@ -403,7 +395,6 @@ docker compose -f docker-compose.yml up -d --force-recreate app
     -- Option 2. Using VS Code debug mode
 
 The application will be available at [http://localhost:8000](http://localhost:8000).
-
 
 **Rebuilding Containers for Local Development**
 
@@ -433,7 +424,6 @@ chmod +x scripts/dev_status.sh
 # Watch specific service logs
 ./scripts/dev_logs.sh db
 ```
-
 
 **Use development tools `scripts/dev_tools.sh`**
 
@@ -491,11 +481,20 @@ lsof -i :8000
 # If ports are in use, kill the processes or change ports in docker-compose.debug.yml
 ```
 
-
 **If you change the code and need to rebuild the model:**
 
 ```
 # Force rebuild without cache
 docker compose -f docker-compose.debug.yml build --no-cache app-debug
 docker compose -f docker-compose.debug.yml up -d --force-recreate app-debug
+```
+
+
+
+# Best Practice
+
+**1. Get all pulumi outputs**
+
+```
+python tests/lambda_functions/get_pulumi_outputs.py
 ```
