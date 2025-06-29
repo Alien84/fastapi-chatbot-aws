@@ -71,15 +71,6 @@ def create_message_processor_lambda(db_ssm_prefix, vpc_id, subnet_ids, security_
         policy_arn=lambda_policy.arn,
     )
 
-    """
-    What pulumi.FileArchive("../lambda_functions/message_processor") does:
-
-        Packages the directory: Pulumi automatically zips the entire message_processor folder
-        Includes dependencies: It processes the requirements.txt and includes Python packages
-        Uploads to AWS: The zip file is uploaded to AWS Lambda, AWS stores the zip file in an S3 bucket
-        Sets entry point: The handler="lambda_function.lambda_handler" tells AWS to call the lambda_handler function in lambda_function.py
-    """
-
     # Create the Lambda function with the packaged code
     lambda_function = aws.lambda_.Function(
         "message-processor-lambda",
