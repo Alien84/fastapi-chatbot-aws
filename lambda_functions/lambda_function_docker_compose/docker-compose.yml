@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # Build service - builds the Lambda container image
+  lambda-build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+      args:
+        - BUILDPLATFORM=linux/amd64
+        - TARGETPLATFORM=linux/amd64
+    image: ${IMAGE_NAME}:latest
+    container_name: lambda-psycopg2-build
+    platform: linux/amd64
+    environment:
+      - AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID}
+      - AWS_REGION=${AWS_REGION}
+    profiles:
+      - build
+    command: echo "Build completed successfully"
+
+  # Test service - runs the container locally for testing
+  lambda-test:
+    image: ${IMAGE_NAME}:latest
+    container_name: lambda-psycopg2-test
+    platform: linux/amd64
+    ports:
+      - "9000:8080"
+    environment:
+      - AWS_EXECUTION_ENV=local-test
+    profiles:
+      - test
+  
+
+networks:
+  lambda-network:
+    driver: bridge
