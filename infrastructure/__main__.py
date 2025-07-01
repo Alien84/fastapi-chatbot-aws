@@ -260,18 +260,6 @@ pulumi.export("db_param_path", f"/{name}/{stack_name}/db")
 # Create the SSM parameter prefix
 ssm_prefix = pulumi.Output.concat("/", name, "/", stack_name, "/db")
 
-
-# Create the Lambda function (add this after creating your VPC and database)
-message_processor_lambda = create_message_processor_lambda(
-    db_ssm_prefix=ssm_prefix,
-    vpc_id=network["vpc"].id,
-    subnet_ids=[subnet.id for subnet in network["private_subnets"]],
-    security_group_id=db_sg.id
-)
-
-# Export the Lambda function name
-pulumi.export("message_processor_lambda_name", message_processor_lambda.name)
-
 # Process the user data script with environment variables
 # Process the user data script with environment variables
 user_data = pulumi.Output.all(
@@ -300,7 +288,6 @@ user_data_hash = user_data.apply(
 #     lambda data: hashlib.md5(data.encode("utf-8")).hexdigest(),
 #     user_data
 # )
-
 
 # Create an IAM role for EC2 instances
 ec2_role = aws.iam.Role(
@@ -1058,3 +1045,16 @@ else:
     pulumi.export("load_balancer_dns", load_balancer.dns_name)
     pulumi.export("application_url", pulumi.Output.concat("http://", load_balancer.dns_name))
     pulumi.export("db_ssm_prefix", pulumi.Output.concat("/", stack_name, "/db"))
+
+
+## Lambda Fucntion
+# # Create the Lambda function (add this after creating your VPC and database)
+# message_processor_lambda = create_message_processor_lambda(
+#     db_ssm_prefix=ssm_prefix,
+#     vpc_id=network["vpc"].id,
+#     subnet_ids=[subnet.id for subnet in network["private_subnets"]],
+#     security_group_id=db_sg.id
+# )
+
+# # Export the Lambda function name
+# pulumi.export("message_processor_lambda_name", message_processor_lambda.name)
