@@ -1,11 +1,11 @@
 name: CD with Docker
 
 on:
-  push:
-    branches:
+  # push:
+  #   branches:
   #     - main    # Production
   #     - staging # Staging
-      - dev # Development
+  #    - dev # Development
   workflow_dispatch:
     inputs:
       environment:
