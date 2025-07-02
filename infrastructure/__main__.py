@@ -424,10 +424,13 @@ ssm_managed_policy_attachment = aws.iam.RolePolicyAttachment(
 # Lambda Fucntion
 # Create the Lambda function (add this after creating your VPC and database)
 message_processor_lambda = create_message_processor_lambda(
+    name=name,
+    stack_name=stack_name,
     db_ssm_prefix=ssm_prefix,
     vpc_id=network["vpc"].id,
     subnet_ids=[subnet.id for subnet in network["private_subnets"]],
-    security_group_id=db_sg.id
+    security_group_id=db_sg.id,
+    region=region
 )
 
 # Export the Lambda function name
