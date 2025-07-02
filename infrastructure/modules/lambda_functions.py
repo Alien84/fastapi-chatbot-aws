@@ -11,8 +11,23 @@ def create_message_processor_lambda(
         vpc_id, 
         subnet_ids, 
         security_group_id,
-        region
+        region,
+        image_tag="latest"
         ):
+    """
+    Creates a Lambda function using a Docker container.
+    
+    Prerequisites:
+    - Docker image must already be built and pushed to ECR
+    - Use the build_and_push_image() helper function or manual CLI commands
+    
+    Args:
+        db_ssm_prefix: SSM parameter prefix for database config
+        vpc_id: VPC ID for Lambda function
+        subnet_ids: Subnet IDs for Lambda function
+        security_group_id: Security group ID for Lambda function
+        image_tag: Docker image tag (default: "latest")
+    """
 
     lambda_ecr_repo = aws.ecr.Repository(
         f"{name}-{stack_name}-lambda-message-processor",
@@ -30,11 +45,9 @@ def create_message_processor_lambda(
 
     # Build and push Docker image
     docker_image = aws.ecr.get_authorization_token_output()
-    image_tag = "latest"
 
     # Build the Docker image locally and push to ECR
-    docker_build_script = f"""
-        #!/bin/bash
+    docker_build_script = f"""#!/bin/bash
         set -e
 
         # Get repository URI
@@ -44,7 +57,7 @@ def create_message_processor_lambda(
         echo "Building Docker image..."
         cd ../lambda_functions/message_processor
         # docker build -t {lambda_ecr_repo.name}:{image_tag} .
-        docker buildx build --platform linux/amd64 -t lambda-psycopg2-test {lambda_ecr_repo.name}:{image_tag} . --load
+        docker buildx build --platform linux/amd64 -t {lambda_ecr_repo.name}:{image_tag} . --load
 
         # Login to ECR
         echo "Logging in to ECR..."
@@ -53,40 +66,42 @@ def create_message_processor_lambda(
 
         # Tag and push the image
         echo "Tagging and pushing image..."
-        docker tag {lambda_ecr_repo}:{image_tag} $REPO_URI:{image_tag}
+        docker tag {lambda_ecr_repo.name}:{image_tag} $REPO_URI:{image_tag}
         docker push $REPO_URI:{image_tag}
 
         echo "Docker image pushed successfully!"
         """
     
-    # Execute the build script
-    build_result = subprocess.run(
-        docker_build_script,
-        shell=True,
-        capture_output=True,
-        text=True
-    )
+    try:
+        # Execute the build script
+        build_result = subprocess.run(
+            docker_build_script,
+            shell=True,
+            capture_output=True,
+            text=True,
+            cwd="../lambda_functions/message_processor"
+        )
 
 
-    # result = subprocess.run([package_script], cwd="../lambda_functions/message_processor", 
-    #                           capture_output=True, text=True)
+        # result = subprocess.run([package_script], cwd="../lambda_functions/message_processor", 
+        #                           capture_output=True, text=True)
 
-    # if build_result.returncode != 0:
-    #     print(f"Docker build failed: {build_result.stderr}")
-    #     raise Exception("Docker build failed")
-    # else:
-    #     print("Docker image built and pushed successfully")
+        if build_result.returncode != 0:
+            print(f"Docker build failed: {build_result.stderr}")
+            print(f"Docker build stdout: {build_result.stdout}")
+            raise Exception(f"Docker build failed with return code {build_result.returncode}")
+        else:
+            print("Docker image built and pushed successfully")
+            print(f"Build output: {build_result.stdout}")
+    
+    except Exception as e:
+        print(f"Error during Docker build and push: {str(e)}")
+        raise
     
     # # Construct the image URI
-    # image_uri = pulumi.Output.concat(
-    #     current.account_id,
-    #     ".dkr.ecr.",
-    #     region.name,
-    #     ".amazonaws.com/",
-    #     ecr_repo.name,
-    #     ":",
-    #     image_tag
-    # )
+    # Construct image URI using Pulumi's built-in functions
+    image_uri = pulumi.Output.concat(lambda_ecr_repo.repository_url, ":", image_tag)
+    pulumi.export("image_uri", image_uri)
 
 
 
@@ -176,6 +191,11 @@ def create_message_processor_lambda(
     #         depends_on=[lambda_ecr_repo]  # Ensure ECR repo exists before creating function
     #     ),
     # )
+
+    # Export useful outputs
+    # pulumi.export("lambda_function_name", lambda_function.name)
+    # pulumi.export("ecr_repository_url", ecr_repo.repository_url)
+    # pulumi.export("image_uri", image_uri)
 
     return 
 
