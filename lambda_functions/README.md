@@ -242,13 +242,14 @@ curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" \
 docker stop $(docker ps -q --filter ancestor=lambda-psycopg2-test)
 ```
 
+
+```
 `${LAMBDA_TASK_ROOT}` is an **environment variable** that AWS Lambda provides in its base container images. It points to the directory where your Lambda function code should be placed. Default value is 
 
 `LAMBDA_TASK_ROOT=/var/task`
 
 If you want to see what `${LAMBDA_TASK_ROOT}` actually is:
 
-```
 # Run container interactively
 docker run -it --entrypoint /bin/bash lambda-psycopg2-test
 
@@ -262,7 +263,7 @@ ls -la $LAMBDA_TASK_ROOT
 ```
 
 
-**Step 2 (alternative): Clean and Rebuild with Explicit Platform Using Docek Compose**
+**Step 2 (alternative): Clean and Rebuild with Explicit Platform Using Docker Compose**
 
 ```
 mkdir lambda_function_docker_compose
