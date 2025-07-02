@@ -1,6 +1,5 @@
 import pulumi
 import pulumi_aws as aws
-import pulumi_docker as docker
 import json
 import subprocess
 import os
@@ -182,6 +181,7 @@ def create_message_processor_lambda_v2(db_ssm_prefix, vpc_id, subnet_ids, securi
        To use the integrated Docker approach, you'll need to install the Docker provider: pip install pulumi-docker
     """
 
+    import pulumi_docker as docker
     # Calculate hash of source directory for versioning
     def calculate_source_hash(directory):
         import hashlib
