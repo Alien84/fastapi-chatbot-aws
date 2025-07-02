@@ -4,6 +4,7 @@ import json
 import subprocess
 import os
 
+
 def create_message_processor_lambda(
         name,
         stack_name,
@@ -39,66 +40,74 @@ def create_message_processor_lambda(
         force_delete=True,  # Allow deletion even if images exist
         tags={"Name": f"{name}-{stack_name}-lambda-message-processor"}
     )
+    
     # Export the ECR repository URL
     pulumi.export("lambda_ecr_repo_url", lambda_ecr_repo.repository_url)
     pulumi.export("lambda_ecr_repo_name", lambda_ecr_repo.name)
 
-    # Build and push Docker image
-    docker_image = aws.ecr.get_authorization_token_output()
+    # Create a Pulumi dynamic resource to handle Docker build and push
+    def build_and_push_image(repo_url, repo_name, region, image_tag):
+        import subprocess
+        import os
+        
+        # Build the Docker image locally and push to ECR
+        docker_build_script = f"""#!/bin/bash
+            set -e
 
-    # Build the Docker image locally and push to ECR
-    docker_build_script = f"""#!/bin/bash
-        set -e
+            # Get repository URI
+            REPO_URI={repo_url}
 
-        # Get repository URI
-        REPO_URI={lambda_ecr_repo.repository_url}
+            # Build the Docker image
+            echo "Building Docker image..."
+            cd ../lambda_functions/message_processor
 
-        # Build the Docker image
-        echo "Building Docker image..."
-        cd ../lambda_functions/message_processor
-        # docker build -t {lambda_ecr_repo.name}:{image_tag} .
-        docker buildx build --platform linux/amd64 -t {lambda_ecr_repo.name}:{image_tag} . --load
+            # Build for linux/amd64 platform (required for Lambda)
+            docker buildx build --platform linux/amd64 -t {repo_name}:{image_tag} . --load
 
-        # Login to ECR
-        echo "Logging in to ECR..."
-        aws ecr get-login-password --region {region} | docker login --username AWS --password-stdin $REPO_URI
+            # Login to ECR
+            echo "Logging in to ECR..."
+            aws ecr get-login-password --region {region} | docker login --username AWS --password-stdin $REPO_URI
 
+            # Tag and push the image
+            echo "Tagging and pushing image..."
+            docker tag {repo_name}:{image_tag} $REPO_URI:{image_tag}
+            docker push $REPO_URI:{image_tag}
 
-        # Tag and push the image
-        echo "Tagging and pushing image..."
-        docker tag {lambda_ecr_repo.name}:{image_tag} $REPO_URI:{image_tag}
-        docker push $REPO_URI:{image_tag}
-
-        echo "Docker image pushed successfully!"
-        """
-    
-    try:
+            echo "Docker image pushed successfully!"
+            """
+        
         # Execute the build script
-        build_result = subprocess.run(
-            docker_build_script,
-            shell=True,
-            capture_output=True,
-            text=True,
-            cwd="../lambda_functions/message_processor"
+        try:
+            build_result = subprocess.run(
+                docker_build_script,
+                shell=True,
+                capture_output=True,
+                text=True,
+                cwd="../lambda_functions/message_processor"
+            )
+            
+            if build_result.returncode != 0:
+                print(f"Docker build failed: {build_result.stderr}")
+                print(f"Docker build stdout: {build_result.stdout}")
+                raise Exception(f"Docker build failed with return code {build_result.returncode}")
+            else:
+                print("Docker image built and pushed successfully")
+                print(f"Build output: {build_result.stdout}")
+                
+        except Exception as e:
+            print(f"Error during Docker build and push: {str(e)}")
+            raise
+
+    # Use Pulumi's apply to run the build after ECR repo is created
+    lambda_ecr_repo.repository_url.apply(
+        lambda repo_url: build_and_push_image(
+            repo_url, 
+            f"{name}-{stack_name}-lambda-message-processor",
+            region, 
+            image_tag
         )
-
-
-        # result = subprocess.run([package_script], cwd="../lambda_functions/message_processor", 
-        #                           capture_output=True, text=True)
-
-        if build_result.returncode != 0:
-            print(f"Docker build failed: {build_result.stderr}")
-            print(f"Docker build stdout: {build_result.stdout}")
-            raise Exception(f"Docker build failed with return code {build_result.returncode}")
-        else:
-            print("Docker image built and pushed successfully")
-            print(f"Build output: {build_result.stdout}")
+    )
     
-    except Exception as e:
-        print(f"Error during Docker build and push: {str(e)}")
-        raise
-    
-    # # Construct the image URI
     # Construct image URI using Pulumi's built-in functions
     image_uri = pulumi.Output.concat(lambda_ecr_repo.repository_url, ":", image_tag)
     pulumi.export("image_uri", image_uri)
