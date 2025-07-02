@@ -102,13 +102,14 @@ def trigger_message_processing(message_id: int, content: str):
         }
         
         response = lambda_client.invoke(
-            FunctionName=os.environ.get('MESSAGE_PROCESSOR_LAMBDA_NAME', 'message-processor-lambda'),
+            FunctionName='message-processor-lambda',
             InvocationType='Event',  # Asynchronous invocation
             Payload=json.dumps(payload)
         )
         
         logger.info(f"Triggered Lambda processing for message {message_id}")
         return True
+    
     except Exception as e:
         logger.error(f"Failed to trigger Lambda processing: {e}")
         return False

@@ -1,0 +1,32 @@
+# TODO
+# Multi-stage build for smaller final image
+FROM python:3.10-slim as builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create and activate virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Final stage - use AWS Lambda base image
+FROM public.ecr.aws/lambda/python:3.10
+
+# Copy the virtual environment from builder stage
+COPY --from=builder /opt/venv /opt/venv
+
+# Make sure to use venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy function code
+COPY lambda_function.py ${LAMBDA_TASK_ROOT}
+
+# Set the CMD to your handler
+CMD ["lambda_function.lambda_handler"]

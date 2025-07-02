@@ -59,6 +59,22 @@ pulumi.export("private_key_id", key_pair.key_pair_id)
 pulumi.export("private_key_pem", private_key.private_key_pem)
 
 
+## Create an IAM role for EC2 instances
+ec2_role = aws.iam.Role(
+    f"{name}-{stack_name}-ec2-role",
+    assume_role_policy=json.dumps({
+        "Version": "2012-10-17",
+        "Statement": [{
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "ec2.amazonaws.com",
+            },
+        }],
+    }),
+)
+
+
 # Create an ECR repository for the application
 ecr_repository = aws.ecr.Repository(
      f"{name}-{stack_name}-app",
@@ -73,7 +89,7 @@ ecr_repository = aws.ecr.Repository(
 
 # Create a lifecycle policy to manage image retention
 ecr_lifecycle_policy = aws.ecr.LifecyclePolicy(
-     f"{name}-{stack_name}-app-lifecycle",
+    f"{name}-{stack_name}-app-lifecycle",
     repository=ecr_repository.name,
     # policy=json.dumps({
     #     "rules": [
@@ -108,13 +124,49 @@ ecr_lifecycle_policy = aws.ecr.LifecyclePolicy(
     opts=pulumi.ResourceOptions(depends_on=[ecr_repository])
 )
 
+# Create a comprehensive ECR policy
+ecr_policy = aws.iam.Policy(
+    "ecr-policy",
+    policy=pulumi.Output.all(ecr_repository.arn).apply(
+        lambda args: json.dumps({
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ecr:GetAuthorizationToken"
+                    ],
+                    "Resource": "*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ecr:BatchCheckLayerAvailability",
+                        "ecr:GetDownloadUrlForLayer",
+                        "ecr:BatchGetImage",
+                        "ecr:DescribeRepositories",
+                        "ecr:DescribeImages",
+                        "ecr:ListImages",
+                        "ecr:DescribeImageScanFindings",
+                        "ecr:GetRepositoryPolicy"
+                    ],
+                    "Resource": args[0]
+                }
+            ],
+        })
+    ),
+)
+
+# Attach the ECR policy to the EC2 role
+ecr_policy_attachment = aws.iam.RolePolicyAttachment(
+    f"{name}-{stack_name}-ecr-policy-attachment",
+    role=ec2_role.name,
+    policy_arn=ecr_policy.arn,
+)
+
 # Export the ECR repository URL
 pulumi.export("ecr_repository_url", ecr_repository.repository_url)
 pulumi.export("ecr_repository_name", ecr_repository.name)
-
-# Read the user data script
-with open("user_data.sh", "r") as f:
-    user_data_template = f.read()
 
 # Create VPC and networking components
 network = create_vpc(name=name, stack_name=stack_name)
@@ -193,6 +245,10 @@ database = create_rds_instance(
     stack_name=stack_name
 )
 
+# Read the user data script
+with open("user_data.sh", "r") as f:
+    user_data_template = f.read()
+
 # Create secrets for database credentials
 # NOTE -- Method #1: Apply the user data script with database credentials directly
 # user_data = pulumi.Output.all(
@@ -245,23 +301,17 @@ db_secrets = create_ssm_secrets(
 
 # Export the secret name for reference
 pulumi.export("db_param_path", f"/{name}/{stack_name}/db")
+# Create the SSM parameter prefix
+ssm_prefix = pulumi.Output.concat("/", name, "/", stack_name, "/db")
 
 
-# Process the user data script with SSM parameter path
-
+## Process the user data script with environment variables
 # If you're using aws.ec2.Instance, you do not need to Base64 encode user_data manually. Pulumi does it for you.
 # If You ARE Using a Launch Template (e.g., for Auto Scaling), AWS expects Base64, but you need to manually wrap it into an Output
-
-
 
 # user_data = pulumi.Output.secret(
 #     user_data_template.replace("${DB_PARAM_PATH}", f"/{name}/{stack_name}/db")
 # )
-# Create the SSM parameter prefix
-ssm_prefix = pulumi.Output.concat("/", name, "/", stack_name, "/db")
-
-# Process the user data script with environment variables
-# Process the user data script with environment variables
 user_data = pulumi.Output.all(
     ssm_prefix,
     ecr_repository.repository_url,
@@ -289,22 +339,23 @@ user_data_hash = user_data.apply(
 #     user_data
 # )
 
-# Create an IAM role for EC2 instances
-ec2_role = aws.iam.Role(
-    f"{name}-{stack_name}-ec2-role",
-    assume_role_policy=json.dumps({
-        "Version": "2012-10-17",
-        "Statement": [{
-            "Action": "sts:AssumeRole",
-            "Effect": "Allow",
-            "Principal": {
-                "Service": "ec2.amazonaws.com",
-            },
-        }],
-    }),
-)
+## Lambda Fucntion
+# # Create the Lambda function (add this after creating your VPC and database)
+# message_processor_lambda = create_message_processor_lambda(
+#     db_ssm_prefix=ssm_prefix,
+#     vpc_id=network["vpc"].id,
+#     subnet_ids=[subnet.id for subnet in network["private_subnets"]],
+#     security_group_id=db_sg.id
+# )
 
-# NOTE Create a policy for Secrets Manager access
+# # Export the Lambda function name
+# pulumi.export("message_processor_lambda_name", message_processor_lambda.name)
+
+
+
+
+
+## Create a policy for Secrets Manager access
 # secrets_policy = aws.iam.Policy(
 #     f"{name}-{stack_name}-secrets-policy",
 #     policy=pulumi.Output.all(db_secrets["secret"].arn).apply(
@@ -323,7 +374,7 @@ ec2_role = aws.iam.Role(
 # )
 
 
-# NOTE Create a policy for SSM Parameter Store access instead of Secrets Manager
+## Create a policy for SSM Parameter Store access instead of Secrets Manager
 secrets_policy = aws.iam.Policy(
     f"{name}-{stack_name}-ssm-policy",
     policy=json.dumps({
@@ -373,8 +424,20 @@ role_policy_attachment = aws.iam.RolePolicyAttachment(
     role=ec2_role.name,
     policy_arn=secrets_policy.arn,
 )
+"""
+to ensure SSM commands work properly through GitHub Actions, you need to make sure your instance has the correct IAM permissions. You'll need to add the SSM managed policy to your IAM role.
+You should also verify that your instance appears in SSM by checking the Systems Manager console or running this AWS CLI command
+aws ssm describe-instance-information --query "InstanceInformationList[?InstanceId=='YOUR_INSTANCE_ID']"
+"""
+# Add SSM permissions to your EC2 IAM role
+ssm_managed_policy_attachment = aws.iam.RolePolicyAttachment(
+    "ssm-managed-policy-attachment",
+    role=ec2_role.name,
+    policy_arn="arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+)
 
-# Create a CloudWatch log group
+
+## Create a CloudWatch log group
 log_group = aws.cloudwatch.LogGroup(
     f"{name}-{stack_name}-logs",
     name=f"/aws/ec2/{name}-{stack_name}",
@@ -405,64 +468,12 @@ logs_policy_attachment = aws.iam.RolePolicyAttachment(
     policy_arn=logs_policy.arn,
 )
 
-# Create a comprehensive ECR policy
-ecr_policy = aws.iam.Policy(
-    "ecr-policy",
-    policy=pulumi.Output.all(ecr_repository.arn).apply(
-        lambda args: json.dumps({
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "ecr:GetAuthorizationToken"
-                    ],
-                    "Resource": "*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "ecr:BatchCheckLayerAvailability",
-                        "ecr:GetDownloadUrlForLayer",
-                        "ecr:BatchGetImage",
-                        "ecr:DescribeRepositories",
-                        "ecr:DescribeImages",
-                        "ecr:ListImages",
-                        "ecr:DescribeImageScanFindings",
-                        "ecr:GetRepositoryPolicy"
-                    ],
-                    "Resource": args[0]
-                }
-            ],
-        })
-    ),
-)
-
-# Attach the ECR policy to the EC2 role
-ecr_policy_attachment = aws.iam.RolePolicyAttachment(
-    f"{name}-{stack_name}-ecr-policy-attachment",
-    role=ec2_role.name,
-    policy_arn=ecr_policy.arn,
-)
-
-"""
-to ensure SSM commands work properly through GitHub Actions, you need to make sure your instance has the correct IAM permissions. You'll need to add the SSM managed policy to your IAM role.
-You should also verify that your instance appears in SSM by checking the Systems Manager console or running this AWS CLI command
-aws ssm describe-instance-information --query "InstanceInformationList[?InstanceId=='YOUR_INSTANCE_ID']"
-"""
-# Add SSM permissions to your EC2 IAM role
-ssm_managed_policy_attachment = aws.iam.RolePolicyAttachment(
-    "ssm-managed-policy-attachment",
-    role=ec2_role.name,
-    policy_arn="arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
-)
 
 # Create an instance profile
 instance_profile = aws.iam.InstanceProfile(
     f"{name}-{stack_name}-instance-profile",
     role=ec2_role.name,
 )
-
 
 # Create an EC2 instance using default vpc
 # instance, security_group = create_ec2_instance(
@@ -1047,14 +1058,3 @@ else:
     pulumi.export("db_ssm_prefix", pulumi.Output.concat("/", stack_name, "/db"))
 
 
-## Lambda Fucntion
-# # Create the Lambda function (add this after creating your VPC and database)
-# message_processor_lambda = create_message_processor_lambda(
-#     db_ssm_prefix=ssm_prefix,
-#     vpc_id=network["vpc"].id,
-#     subnet_ids=[subnet.id for subnet in network["private_subnets"]],
-#     security_group_id=db_sg.id
-# )
-
-# # Export the Lambda function name
-# pulumi.export("message_processor_lambda_name", message_processor_lambda.name)

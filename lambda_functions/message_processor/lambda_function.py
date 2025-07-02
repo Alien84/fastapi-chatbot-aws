@@ -214,12 +214,13 @@ def lambda_handler(event, context):
         logger.info("🔍 Starting sentiment analysis...")
         sentiment_data = analyze_sentiment_with_debug(message_content)
         # sentiment_data = analyze_sentiment(message_content)
+        logger.info(f"Sentiment analysis result: {sentiment_data}")
         
         # Prepare response
         response_data = {
             'message': f'Processing complete for message {message_id}',
             'sentiment_analysis': sentiment_data,
-            'service_tests': service_tests,
+            # 'service_tests': service_tests,
             'test_mode': True,
             'lambda_info': {
                 'region': os.environ.get('AWS_REGION'),
