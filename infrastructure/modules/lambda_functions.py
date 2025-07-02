@@ -48,7 +48,7 @@ def create_message_processor_lambda(
 
         # Login to ECR
         echo "Logging in to ECR..."
-        aws ecr get-login-password --region {region.name} | docker login --username AWS --password-stdin $REPO_URI
+        aws ecr get-login-password --region {region} | docker login --username AWS --password-stdin $REPO_URI
 
 
         # Tag and push the image
