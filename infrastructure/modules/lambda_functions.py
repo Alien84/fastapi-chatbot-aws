@@ -168,32 +168,41 @@ def create_message_processor_lambda(
         policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
     )
 
-
-
-    # Create the Lambda function with container image
     lambda_function = aws.lambda_.Function(
-        "message-processor-lambda",
-        role=lambda_role.arn,
-        package_type="Image",  # Use container image instead of Zip
-        code=aws.lambda_.FunctionCodeArgs(
-            image_uri=image_uri,
+        f"{name}-{stack_name}-message-processor",
+        # For container images, these are the required parameters:
+        package_type="Image",           # This tells Lambda it's a container
+        image_uri=image_uri,           # The ECR image URI
+        role=lambda_role,          # IAM role ARN
+        
+        # Optional parameters:
+        timeout=300,                   # 5 minutes
+        memory_size=512,              # Memory in MB
+        
+        # VPC configuration (if needed)
+        vpc_config=aws.lambda_.FunctionVpcConfigArgs(
+            subnet_ids=subnet_ids,
+            security_group_ids=[security_group_id]
         ),
-        timeout=30,
-        memory_size=512,  # Increased for container overhead
+        
+        # Environment variables
         environment=aws.lambda_.FunctionEnvironmentArgs(
             variables={
                 "DB_SSM_PREFIX": db_ssm_prefix,
-            },
-        ),
-        vpc_config=aws.lambda_.FunctionVpcConfigArgs(
-            subnet_ids=subnet_ids,
-            security_group_ids=[security_group_id],
+                "AWS_REGION": region
+            }
         ),
         # Container-specific configurations
         architectures=["x86_64"],
         opts=pulumi.ResourceOptions(
             depends_on=[lambda_ecr_repo]  # Ensure ECR repo exists before creating function
         ),
+        
+        # Tags
+        tags={
+            "Name": f"{name}-{stack_name}-message-processor",
+            "Environment": stack_name
+        }
     )
 
     # Export useful outputs
@@ -201,7 +210,7 @@ def create_message_processor_lambda(
     pulumi.export("ecr_repository_url", lambda_ecr_repo.repository_url)
     pulumi.export("image_uri", image_uri)
 
-    return 
+    return lambda_function
 
 
 def create_message_processor_lambda_v2(db_ssm_prefix, vpc_id, subnet_ids, security_group_id):
