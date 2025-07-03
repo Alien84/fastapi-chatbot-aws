@@ -173,7 +173,7 @@ def create_message_processor_lambda(
         # For container images, these are the required parameters:
         package_type="Image",           # This tells Lambda it's a container
         image_uri=image_uri,           # The ECR image URI
-        role=lambda_role,          # IAM role ARN
+        role=lambda_role.arn,          # IAM role ARN
         
         # Optional parameters:
         timeout=300,                   # 5 minutes
