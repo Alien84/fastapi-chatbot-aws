@@ -58,7 +58,7 @@ def create_message_processor_lambda(
             REPO_URI={repo_url}
 
             # Build the Docker image
-            echo "Building Docker image..."
+            echo "Building Docker image for lambda function..."
             cd ../lambda_functions/message_processor
 
             # Build for linux/amd64 platform (required for Lambda)
@@ -73,7 +73,7 @@ def create_message_processor_lambda(
             docker tag {repo_name}:{image_tag} $REPO_URI:{image_tag}
             docker push $REPO_URI:{image_tag}
 
-            echo "Docker image pushed successfully!"
+            echo "Docker image for lambda function pushed successfully!"
             """
         
         # Execute the build script
@@ -87,11 +87,11 @@ def create_message_processor_lambda(
             )
             
             if build_result.returncode != 0:
-                print(f"Docker build failed: {build_result.stderr}")
-                print(f"Docker build stdout: {build_result.stdout}")
+                print(f"Docker (lambda) build failed: {build_result.stderr}")
+                print(f"Docker (lambda) build stdout: {build_result.stdout}")
                 raise Exception(f"Docker build failed with return code {build_result.returncode}")
             else:
-                print("Docker image built and pushed successfully")
+                print("Docker (lambda) image built and pushed successfully")
                 print(f"Build output: {build_result.stdout}")
                 
         except Exception as e:
@@ -114,97 +114,92 @@ def create_message_processor_lambda(
 
 
 
+    # Create IAM role for Lambda
+    lambda_role = aws.iam.Role(
+        "message-processor-lambda-role",
+        assume_role_policy=json.dumps({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Action": "sts:AssumeRole",
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": "lambda.amazonaws.com",
+                },
+            }],
+        }),
+    )
+
+    # Create custom policy for SSM and Comprehend
+    lambda_policy = aws.iam.Policy(
+        "message-processor-lambda-policy",
+        policy=json.dumps({
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ssm:GetParameter",
+                        "ssm:GetParameters",
+                        "ssm:GetParametersByPath"
+                    ],
+                    "Resource": f"arn:aws:ssm:*:*:parameter{db_ssm_prefix}/*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "comprehend:DetectSentiment"
+                    ],
+                    "Resource": "*"
+                }
+            ],
+        }),
+    )
+
+    aws.iam.RolePolicyAttachment(
+        "lambda-custom-policy-attachment",
+        role=lambda_role.name,
+        policy_arn=lambda_policy.arn,
+    )
+
+    # Attach VPC execution policy
+    aws.iam.RolePolicyAttachment(
+        "lambda-vpc-execution",
+        role=lambda_role.name,
+        policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+    )
 
 
 
-
-
-    # # Create IAM role for Lambda
-    # lambda_role = aws.iam.Role(
-    #     "message-processor-lambda-role",
-    #     assume_role_policy=json.dumps({
-    #         "Version": "2012-10-17",
-    #         "Statement": [{
-    #             "Action": "sts:AssumeRole",
-    #             "Effect": "Allow",
-    #             "Principal": {
-    #                 "Service": "lambda.amazonaws.com",
-    #             },
-    #         }],
-    #     }),
-    # )
-
-    # # Create custom policy for SSM and Comprehend
-    # lambda_policy = aws.iam.Policy(
-    #     "message-processor-lambda-policy",
-    #     policy=json.dumps({
-    #         "Version": "2012-10-17",
-    #         "Statement": [
-    #             {
-    #                 "Effect": "Allow",
-    #                 "Action": [
-    #                     "ssm:GetParameter",
-    #                     "ssm:GetParameters",
-    #                     "ssm:GetParametersByPath"
-    #                 ],
-    #                 "Resource": f"arn:aws:ssm:*:*:parameter{db_ssm_prefix}/*"
-    #             },
-    #             {
-    #                 "Effect": "Allow",
-    #                 "Action": [
-    #                     "comprehend:DetectSentiment"
-    #                 ],
-    #                 "Resource": "*"
-    #             }
-    #         ],
-    #     }),
-    # )
-
-    # aws.iam.RolePolicyAttachment(
-    #     "lambda-custom-policy-attachment",
-    #     role=lambda_role.name,
-    #     policy_arn=lambda_policy.arn,
-    # )
-
-    # # Attach VPC execution policy
-    # aws.iam.RolePolicyAttachment(
-    #     "lambda-vpc-execution",
-    #     role=lambda_role.name,
-    #     policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
-    # )
-
-
-
-    # # Create the Lambda function with container image
-    # lambda_function = aws.lambda_.Function(
-    #     "message-processor-lambda",
-    #     role=lambda_role.arn,
-    #     package_type="Image",  # Use container image instead of Zip
-    #     code=aws.lambda_.FunctionCodeArgs(
-    #         image_uri=image_uri,
-    #     ),
-    #     timeout=30,
-    #     memory_size=512,  # Increased for container overhead
-    #     environment=aws.lambda_.FunctionEnvironmentArgs(
-    #         variables={
-    #             "DB_SSM_PREFIX": db_ssm_prefix,
-    #         },
-    #     ),
-    #     vpc_config=aws.lambda_.FunctionVpcConfigArgs(
-    #         subnet_ids=subnet_ids,
-    #         security_group_ids=[security_group_id],
-    #     ),
-    #     # Container-specific configurations
-    #     architectures=["x86_64"],
-    #     opts=pulumi.ResourceOptions(
-    #         depends_on=[lambda_ecr_repo]  # Ensure ECR repo exists before creating function
-    #     ),
-    # )
+    # Create the Lambda function with container image
+    lambda_function = aws.lambda_.Function(
+        "message-processor-lambda",
+        role=lambda_role.arn,
+        package_type="Image",  # Use container image instead of Zip
+        code=aws.lambda_.FunctionCodeArgs(
+            image_uri=image_uri,
+        ),
+        timeout=30,
+        memory_size=512,  # Increased for container overhead
+        environment=aws.lambda_.FunctionEnvironmentArgs(
+            variables={
+                "DB_SSM_PREFIX": db_ssm_prefix,
+            },
+        ),
+        vpc_config=aws.lambda_.FunctionVpcConfigArgs(
+            subnet_ids=subnet_ids,
+            security_group_ids=[security_group_id],
+        ),
+        # Container-specific configurations
+        architectures=["x86_64"],
+        opts=pulumi.ResourceOptions(
+            depends_on=[lambda_ecr_repo]  # Ensure ECR repo exists before creating function
+        ),
+    )
 
     # Export useful outputs
-    # pulumi.export("lambda_function_name", lambda_function.name)
-    # pulumi.export("ecr_repository_url", ecr_repo.repository_url)
-    # pulumi.export("image_uri", image_uri)
+    pulumi.export("lambda_function_name", lambda_function.name)
+    pulumi.export("ecr_repository_url", lambda_ecr_repo.repository_url)
+    pulumi.export("image_uri", image_uri)
 
     return 
 
