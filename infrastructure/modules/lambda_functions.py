@@ -83,7 +83,7 @@ def create_message_processor_lambda(
                 shell=True,
                 capture_output=True,
                 text=True,
-                cwd="../lambda_functions/message_processor"
+                # cwd="../lambda_functions/message_processor"
             )
             
             if build_result.returncode != 0:
