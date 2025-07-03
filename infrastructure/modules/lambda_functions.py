@@ -188,8 +188,7 @@ def create_message_processor_lambda(
         # Environment variables
         environment=aws.lambda_.FunctionEnvironmentArgs(
             variables={
-                "DB_SSM_PREFIX": db_ssm_prefix,
-                "AWS_REGION": region
+                "DB_SSM_PREFIX": db_ssm_prefix
             }
         ),
         # Container-specific configurations
