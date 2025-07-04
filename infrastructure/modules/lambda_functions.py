@@ -150,7 +150,24 @@ def create_message_processor_lambda(
                         "comprehend:DetectSentiment"
                     ],
                     "Resource": "*"
-                }
+                },
+                {
+                "Effect": "Allow",
+                "Action": [
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchGetImage",
+                    "ecr:BatchCheckLayerAvailability"
+                ],
+                "Resource": f"arn:aws:ecr:{region}:*:repository/{name}-{stack_name}-*"
+            },
+            {
+                "Effect": "Allow", 
+                "Action": [
+                    "ecr:GetAuthorizationToken"
+                ],
+                "Resource": "*"
+            }
+
             ],
         }),
     )
