@@ -131,58 +131,70 @@ def create_message_processor_lambda(
 
     # Create custom policy for SSM and Comprehend
     lambda_policy = aws.iam.Policy(
-        "message-processor-lambda-policy",
-        policy=json.dumps({
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "ssm:GetParameter",
-                        "ssm:GetParameters",
-                        "ssm:GetParametersByPath"
+        f"{name}-{stack_name}-lambda-policy",
+        policy=pulumi.Output.all(lambda_ecr_repo.arn).apply(
+            lambda args: json.dumps({
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "ssm:GetParameter",
+                            "ssm:GetParameters",
+                            "ssm:GetParametersByPath"
+                        ],
+                        "Resource": f"arn:aws:ssm:*:*:parameter{db_ssm_prefix}/*"
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "comprehend:DetectSentiment"
+                        ],
+                        "Resource": "*"
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "ecr:BatchCheckLayerAvailability",
+                            "ecr:GetDownloadUrlForLayer",
+                            "ecr:BatchGetImage",
+                            "ecr:DescribeRepositories",
+                            "ecr:DescribeImages",
+                            "ecr:ListImages",
+                            "ecr:DescribeImageScanFindings",
+                            "ecr:GetRepositoryPolicy"
                     ],
-                    "Resource": f"arn:aws:ssm:*:*:parameter{db_ssm_prefix}/*"
-                },
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "comprehend:DetectSentiment"
-                    ],
-                    "Resource": "*"
-                },
-                {
-                "Effect": "Allow",
-                "Action": [
-                    "ecr:GetDownloadUrlForLayer",
-                    "ecr:BatchGetImage",
-                    "ecr:BatchCheckLayerAvailability"
-                ],
-                "Resource": f"arn:aws:ecr:{region}:*:repository/{name}-{stack_name}-*"
-            },
-            {
-                "Effect": "Allow", 
-                "Action": [
-                    "ecr:GetAuthorizationToken"
-                ],
-                "Resource": "*"
-            }
-
-            ],
-        }),
+                        "Resource": args[0]  # ECR repository ARN
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "ecr:GetAuthorizationToken"
+                        ],
+                        "Resource": "*"
+                    }
+                ]
+            })
+        )
     )
 
-    aws.iam.RolePolicyAttachment(
-        "lambda-custom-policy-attachment",
+    basic_execution_attachment = aws.iam.RolePolicyAttachment(
+        f"{name}-{stack_name}-basic-execution",
         role=lambda_role.name,
-        policy_arn=lambda_policy.arn,
+        policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
     )
-
-    # Attach VPC execution policy
-    aws.iam.RolePolicyAttachment(
-        "lambda-vpc-execution",
+    
+    vpc_execution_attachment = aws.iam.RolePolicyAttachment(
+        f"{name}-{stack_name}-vpc-execution",
         role=lambda_role.name,
-        policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+        policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+    )
+    
+    # 4. Attach custom policy
+    custom_policy_attachment = aws.iam.RolePolicyAttachment(
+        f"{name}-{stack_name}-custom-policy",
+        role=lambda_role.name,
+        policy_arn=lambda_policy.arn
     )
 
     lambda_function = aws.lambda_.Function(
@@ -211,7 +223,12 @@ def create_message_processor_lambda(
         # Container-specific configurations
         architectures=["x86_64"],
         opts=pulumi.ResourceOptions(
-            depends_on=[lambda_ecr_repo]  # Ensure ECR repo exists before creating function
+            depends_on=[
+                lambda_ecr_repo,
+                basic_execution_attachment,
+                vpc_execution_attachment,
+                custom_policy_attachment
+                ]  # Ensure ECR repo exists before creating function
         ),
         
         # Tags
