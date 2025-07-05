@@ -239,8 +239,7 @@ def create_message_processor_lambda(
         policy_arn=lambda_policy.arn
     )
 
-    import time
-    time.sleep(30)
+
     lambda_function = aws.lambda_.Function(
         f"{name}-{stack_name}-message-processor",
         # For container images, these are the required parameters:
@@ -268,7 +267,7 @@ def create_message_processor_lambda(
         architectures=["x86_64"],
         opts=pulumi.ResourceOptions(
             depends_on=[
-                lambda_ecr_repo,
+                docker_image,
                 basic_execution_attachment,
                 vpc_execution_attachment,
                 custom_policy_attachment
@@ -285,7 +284,7 @@ def create_message_processor_lambda(
     # Export useful outputs
     pulumi.export("lambda_function_name", lambda_function.name)
     pulumi.export("ecr_repository_url", lambda_ecr_repo.repository_url)
-    pulumi.export("image_uri", image_uri)
+    pulumi.export("image_uri", docker_image.image_uri)
 
     return lambda_function
 
