@@ -218,18 +218,15 @@ def create_message_processor_lambda(
     
     # Construct image URI - CI/CD pipeline should push image with this URI
     image_uri = pulumi.Output.concat(lambda_ecr_repo.repository_url, ":", image_tag)
+    image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-message-processor:latest"
     pulumi.export("lambda_image_uri", image_uri)
-
-    # For initial deployment, use a public Lambda base image if no custom image exists
-    # This will be replaced by your actual image via CI/CD pipeline
-    default_image_uri = f"public.ecr.aws/lambda/python:3.9"
 
     # Create Lambda function
     lambda_function = aws.lambda_.Function(
         f"{name}-{stack_name}-message-processor",
         # Container image configuration
         package_type="Image",
-        image_uri=default_image_uri,
+        image_uri=image_uri,
         role=lambda_role.arn,
         
         # Function configuration
