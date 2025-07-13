@@ -73,14 +73,21 @@ def create_message_processor_lambda(
                         "Action": [
                             "ssm:GetParameter",
                             "ssm:GetParameters",
-                            "ssm:GetParametersByPath"
+                            "ssm:GetParametersByPath",
+                            "ssm:DescribeParameters"
                         ],
-                        "Resource": f"arn:aws:ssm:{region}:*:parameter{db_ssm_prefix}/*"
+                        "Resource": [
+                            f"arn:aws:ssm:{region}:*:parameter{db_ssm_prefix}/",
+                            f"arn:aws:ssm:{region}:*:parameter{db_ssm_prefix}/*"
+                        ]
                     },
                     {
                         "Effect": "Allow",
                         "Action": [
-                            "comprehend:DetectSentiment"
+                            "comprehend:DetectSentiment",
+                            "comprehend:DetectLanguage",
+                            "comprehend:DetectEntities",
+                            "comprehend:DetectKeyPhrases"
                         ],
                         "Resource": "*"
                     },

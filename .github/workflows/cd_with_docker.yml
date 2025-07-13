@@ -125,6 +125,78 @@ jobs:
         env:
             PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
 
+      # STEP 3: Login to ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      
+      # Get ECR repository URL from Pulumi output
+      - name: Get ECR repository URL
+        id: get-ecr-url
+        run: |
+          cd infrastructure
+          pulumi stack select ${{ env.ENVIRONMENT }}
+          ECR_URL=$(pulumi stack output ecr_repository_url)
+          echo "ECR_URL=$ECR_URL" >> $GITHUB_ENV
+          echo "ECR repository URL: $ECR_URL"
+          
+          # Also extract the repository name for cleanup purposes
+          ECR_REPO_NAME=$(echo $ECR_URL | cut -d'/' -f2)
+          echo "ECR_REPO_NAME=$ECR_REPO_NAME" >> $GITHUB_ENV
+          echo "ECR repository name: $ECR_REPO_NAME"
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+
+      # Build and push Docker image
+      - name: Build and push Docker image
+        id: build-push
+        run: |
+          cd app
+          
+          # Create image tags
+          IMAGE_TAG_LATEST="${{ env.ECR_URL }}:latest"
+          IMAGE_TAG_COMMIT="${{ env.ECR_URL }}:${{ github.sha }}"
+          IMAGE_TAG_ENV="${{ env.ECR_URL }}:${{ env.ENVIRONMENT }}-latest"
+          
+          echo "Building Docker image..."
+          echo "Latest tag: $IMAGE_TAG_LATEST"
+          echo "Commit tag: $IMAGE_TAG_COMMIT"
+          echo "Environment tag: $IMAGE_TAG_ENV"
+          
+          # Build the Docker image with multiple tags
+          docker build \
+            -t $IMAGE_TAG_LATEST \
+            -t $IMAGE_TAG_COMMIT \
+            -t $IMAGE_TAG_ENV \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg VCS_REF=${{ github.sha }} \
+            --build-arg VERSION=${{ env.ENVIRONMENT }}-${{ github.sha }} \
+            .
+          
+          # Push all tags
+          echo "Pushing Docker images..."
+          docker push $IMAGE_TAG_LATEST
+          docker push $IMAGE_TAG_COMMIT
+          docker push $IMAGE_TAG_ENV
+
+          echo "Docker image pushed successfully"
+          echo "IMAGE_URI=$ECR_URL:${{ github.sha }}" >> $GITHUB_ENV
+          
+          # Set output for later steps
+          echo "IMAGE_URI=$IMAGE_TAG_LATEST" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${{ github.sha }}" >> $GITHUB_ENV
+
+
+
+
+
+
+      
+      
+      
+      
       # Deploy infrastructure first to ensure ECR repository exists
       - name: Deploy infrastructure with Pulumi
         id: deploy-infrastructure
@@ -159,10 +231,7 @@ jobs:
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
 
-      # STEP 3: Login to ECR
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      
 
 
       # Build and push Docker image
