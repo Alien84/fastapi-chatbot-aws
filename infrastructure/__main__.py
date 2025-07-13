@@ -433,8 +433,6 @@ message_processor_lambda = create_message_processor_lambda(
     region=region
 )
 
-# Export the Lambda function name
-pulumi.export("message_processor_lambda_name", message_processor_lambda.name)
 
 
 

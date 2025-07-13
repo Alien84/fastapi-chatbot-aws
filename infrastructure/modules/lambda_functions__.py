@@ -29,6 +29,9 @@ def create_message_processor_lambda(
         region: AWS region
         image_tag: Docker image tag (default: "latest")
     """
+    # Get current AWS account ID and region
+    current = aws.get_caller_identity()
+    account_id = current.account_id
 
     # Create ECR repository (CI/CD pipeline will push to this)
     lambda_ecr_repo = aws.ecr.Repository(
@@ -42,15 +45,6 @@ def create_message_processor_lambda(
         tags={"Name": f"{name}-{stack_name}-lambda-message-processor"}
     )
     
-    # Export the ECR repository information for CI/CD pipeline
-    pulumi.export("lambda_ecr_repo_url", lambda_ecr_repo.repository_url)
-    pulumi.export("lambda_ecr_repo_name", lambda_ecr_repo.name)
-    pulumi.export("lambda_ecr_repo_arn", lambda_ecr_repo.arn)
-
-    # Construct image URI - CI/CD pipeline should push image with this URI
-    image_uri = pulumi.Output.concat(lambda_ecr_repo.repository_url, ":", image_tag)
-    pulumi.export("lambda_image_uri", image_uri)
-
     # Create IAM role for Lambda
     lambda_role = aws.iam.Role(
         f"{name}-{stack_name}-message-processor-lambda-role",
@@ -70,7 +64,7 @@ def create_message_processor_lambda(
     # Create custom policy for SSM, Comprehend, and ECR access
     lambda_policy = aws.iam.Policy(
         f"{name}-{stack_name}-lambda-policy",
-        policy=pulumi.Output.all(lambda_ecr_repo.arn).apply(
+        policy=pulumi.Output.all(lambda_ecr_repo.arn, account_id).apply(
             lambda args: json.dumps({
                 "Version": "2012-10-17",
                 "Statement": [
@@ -102,7 +96,10 @@ def create_message_processor_lambda(
                             "ecr:DescribeImageScanFindings",
                             "ecr:GetRepositoryPolicy"
                         ],
-                        "Resource": args[0]  # ECR repository ARN
+                        "Resource": [
+                            args[0],  # ECR repository ARN
+                            f"arn:aws:ecr:{region}:{args[1]}:repository/*"  # Allow access to any ECR repo in account
+                        ]
                     },
                     {
                         "Effect": "Allow",
@@ -115,6 +112,46 @@ def create_message_processor_lambda(
             })
         ),
         tags={"Name": f"{name}-{stack_name}-lambda-policy"}
+    )
+
+    # Create ECR repository policy to allow Lambda service to pull images
+    ecr_policy = aws.ecr.RepositoryPolicy(
+        f"{name}-{stack_name}-ecr-policy",
+        repository=lambda_ecr_repo.name,
+        policy=pulumi.Output.all(lambda_role.arn, account_id).apply(
+            lambda args: json.dumps({
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": "lambda.amazonaws.com"
+                        },
+                        "Action": [
+                            "ecr:BatchGetImage",
+                            "ecr:GetDownloadUrlForLayer",
+                            "ecr:BatchCheckLayerAvailability"
+                        ],
+                        "Condition": {
+                            "StringEquals": {
+                                "aws:SourceAccount": args[1]
+                            }
+                        }
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "AWS": args[0]  # Lambda execution role ARN
+                        },
+                        "Action": [
+                            "ecr:BatchGetImage",
+                            "ecr:GetDownloadUrlForLayer",
+                            "ecr:BatchCheckLayerAvailability"
+                        ]
+                    }
+                ]
+            })
+        )
     )
 
     # Attach AWS managed policies
@@ -136,6 +173,15 @@ def create_message_processor_lambda(
         role=lambda_role.name,
         policy_arn=lambda_policy.arn
     )
+
+    # Export the ECR repository information for CI/CD pipeline
+    pulumi.export("lambda_ecr_repo_url", lambda_ecr_repo.repository_url)
+    pulumi.export("lambda_ecr_repo_name", lambda_ecr_repo.name)
+    pulumi.export("lambda_ecr_repo_arn", lambda_ecr_repo.arn)
+    
+    # Construct image URI - CI/CD pipeline should push image with this URI
+    image_uri = pulumi.Output.concat(lambda_ecr_repo.repository_url, ":", image_tag)
+    pulumi.export("lambda_image_uri", image_uri)
 
     # Create Lambda function
     lambda_function = aws.lambda_.Function(
@@ -159,15 +205,15 @@ def create_message_processor_lambda(
         # Environment variables
         environment=aws.lambda_.FunctionEnvironmentArgs(
             variables={
-                "DB_SSM_PREFIX": db_ssm_prefix,
-                "AWS_REGION": region
+                "DB_SSM_PREFIX": db_ssm_prefix
             }
         ),
 
-        # Resource dependencies
+        # Resource dependencies - include ECR policy
         opts=pulumi.ResourceOptions(
             depends_on=[
                 lambda_ecr_repo,
+                ecr_policy,  # Added ECR policy dependency
                 basic_execution_attachment,
                 vpc_execution_attachment,
                 custom_policy_attachment
@@ -190,6 +236,7 @@ def create_message_processor_lambda(
         "lambda_function": lambda_function,
         "lambda_role": lambda_role,
         "ecr_repository": lambda_ecr_repo,
+        "ecr_policy": ecr_policy,
         "image_uri": image_uri
     }
 
@@ -203,6 +250,10 @@ def create_ecr_repository_only(name, stack_name):
         name: Base name for resources
         stack_name: Stack name for resource naming
     """
+    # Get current AWS account ID
+    current = aws.get_caller_identity()
+    account_id = current.account_id
+    
     lambda_ecr_repo = aws.ecr.Repository(
         f"{name}-{stack_name}-lambda-message-processor",
         name=f"{name}-{stack_name}-lambda-message-processor",
@@ -214,9 +265,41 @@ def create_ecr_repository_only(name, stack_name):
         tags={"Name": f"{name}-{stack_name}-lambda-message-processor"}
     )
     
+    # Create ECR repository policy to allow Lambda service access
+    ecr_policy = aws.ecr.RepositoryPolicy(
+        f"{name}-{stack_name}-ecr-policy",
+        repository=lambda_ecr_repo.name,
+        policy=pulumi.Output.all(account_id).apply(
+            lambda args: json.dumps({
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": "lambda.amazonaws.com"
+                        },
+                        "Action": [
+                            "ecr:BatchGetImage",
+                            "ecr:GetDownloadUrlForLayer",
+                            "ecr:BatchCheckLayerAvailability"
+                        ],
+                        "Condition": {
+                            "StringEquals": {
+                                "aws:SourceAccount": args[0]
+                            }
+                        }
+                    }
+                ]
+            })
+        )
+    )
+    
     # Export repository information for CI/CD pipeline
     pulumi.export("lambda_ecr_repo_url", lambda_ecr_repo.repository_url)
     pulumi.export("lambda_ecr_repo_name", lambda_ecr_repo.name)
     pulumi.export("lambda_ecr_repo_arn", lambda_ecr_repo.arn)
     
-    return lambda_ecr_repo
+    return {
+        "ecr_repository": lambda_ecr_repo,
+        "ecr_policy": ecr_policy
+    }
