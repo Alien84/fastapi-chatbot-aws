@@ -44,6 +44,75 @@ def create_message_processor_lambda(
         force_delete=True,  # Allow deletion even if images exist
         tags={"Name": f"{name}-{stack_name}-lambda-message-processor"}
     )
+    
+    # Create IAM role for Lambda
+    lambda_role = aws.iam.Role(
+        f"{name}-{stack_name}-message-processor-lambda-role",
+        assume_role_policy=json.dumps({
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Action": "sts:AssumeRole",
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": "lambda.amazonaws.com",
+                },
+            }],
+        }),
+        tags={"Name": f"{name}-{stack_name}-message-processor-lambda-role"}
+    )
+
+    # Create custom policy for SSM, Comprehend, and ECR access
+    lambda_policy = aws.iam.Policy(
+        f"{name}-{stack_name}-lambda-policy",
+        policy=pulumi.Output.all(lambda_ecr_repo.arn, account_id).apply(
+            lambda args: json.dumps({
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "ssm:GetParameter",
+                            "ssm:GetParameters",
+                            "ssm:GetParametersByPath"
+                        ],
+                        "Resource": f"arn:aws:ssm:{region}:*:parameter{db_ssm_prefix}/*"
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "comprehend:DetectSentiment"
+                        ],
+                        "Resource": "*"
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "ecr:BatchCheckLayerAvailability",
+                            "ecr:GetDownloadUrlForLayer",
+                            "ecr:BatchGetImage",
+                            "ecr:DescribeRepositories",
+                            "ecr:DescribeImages",
+                            "ecr:ListImages",
+                            "ecr:DescribeImageScanFindings",
+                            "ecr:GetRepositoryPolicy"
+                        ],
+                        "Resource": [
+                            args[0],  # ECR repository ARN
+                            f"arn:aws:ecr:{region}:{args[1]}:repository/*"  # Allow access to any ECR repo in account
+                        ]
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "ecr:GetAuthorizationToken"
+                        ],
+                        "Resource": "*"
+                    }
+                ]
+            })
+        ),
+        tags={"Name": f"{name}-{stack_name}-lambda-policy"}
+    )
 
     # Create ECR repository policy to allow Lambda service to pull images
     ecr_policy = aws.ecr.RepositoryPolicy(
@@ -120,75 +189,6 @@ def create_message_processor_lambda(
             }]
         }""",
         opts=pulumi.ResourceOptions(depends_on=[lambda_ecr_repo])
-    )
-    
-    # Create IAM role for Lambda
-    lambda_role = aws.iam.Role(
-        f"{name}-{stack_name}-message-processor-lambda-role",
-        assume_role_policy=json.dumps({
-            "Version": "2012-10-17",
-            "Statement": [{
-                "Action": "sts:AssumeRole",
-                "Effect": "Allow",
-                "Principal": {
-                    "Service": "lambda.amazonaws.com",
-                },
-            }],
-        }),
-        tags={"Name": f"{name}-{stack_name}-message-processor-lambda-role"}
-    )
-
-    # Create custom policy for SSM, Comprehend, and ECR access
-    lambda_policy = aws.iam.Policy(
-        f"{name}-{stack_name}-lambda-policy",
-        policy=pulumi.Output.all(lambda_ecr_repo.arn, account_id).apply(
-            lambda args: json.dumps({
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Action": [
-                            "ssm:GetParameter",
-                            "ssm:GetParameters",
-                            "ssm:GetParametersByPath"
-                        ],
-                        "Resource": f"arn:aws:ssm:{region}:*:parameter{db_ssm_prefix}/*"
-                    },
-                    {
-                        "Effect": "Allow",
-                        "Action": [
-                            "comprehend:DetectSentiment"
-                        ],
-                        "Resource": "*"
-                    },
-                    {
-                        "Effect": "Allow",
-                        "Action": [
-                            "ecr:BatchCheckLayerAvailability",
-                            "ecr:GetDownloadUrlForLayer",
-                            "ecr:BatchGetImage",
-                            "ecr:DescribeRepositories",
-                            "ecr:DescribeImages",
-                            "ecr:ListImages",
-                            "ecr:DescribeImageScanFindings",
-                            "ecr:GetRepositoryPolicy"
-                        ],
-                        "Resource": [
-                            args[0],  # ECR repository ARN
-                            f"arn:aws:ecr:{region}:{args[1]}:repository/*"  # Allow access to any ECR repo in account
-                        ]
-                    },
-                    {
-                        "Effect": "Allow",
-                        "Action": [
-                            "ecr:GetAuthorizationToken"
-                        ],
-                        "Resource": "*"
-                    }
-                ]
-            })
-        ),
-        tags={"Name": f"{name}-{stack_name}-lambda-policy"}
     )
 
     # Attach AWS managed policies
