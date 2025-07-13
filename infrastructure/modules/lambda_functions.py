@@ -44,6 +44,83 @@ def create_message_processor_lambda(
         force_delete=True,  # Allow deletion even if images exist
         tags={"Name": f"{name}-{stack_name}-lambda-message-processor"}
     )
+
+    # Create ECR repository policy to allow Lambda service to pull images
+    ecr_policy = aws.ecr.RepositoryPolicy(
+        f"{name}-{stack_name}-lambda-ecr-policy",
+        repository=lambda_ecr_repo.name,
+        policy=pulumi.Output.all(lambda_role.arn, account_id).apply(
+            lambda args: json.dumps({
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": "lambda.amazonaws.com"
+                        },
+                        "Action": [
+                            "ecr:BatchGetImage",
+                            "ecr:GetDownloadUrlForLayer",
+                            "ecr:BatchCheckLayerAvailability"
+                        ],
+                        "Condition": {
+                            "StringEquals": {
+                                "aws:SourceAccount": args[1]
+                            }
+                        }
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Principal": {
+                            "AWS": args[0]  # Lambda execution role ARN
+                        },
+                        "Action": [
+                            "ecr:BatchGetImage",
+                            "ecr:GetDownloadUrlForLayer",
+                            "ecr:BatchCheckLayerAvailability"
+                        ]
+                    }
+                ]
+            })
+        )
+    )
+
+    # Create a lifecycle policy to manage image retention
+    ecr_lifecycle_policy = aws.ecr.LifecyclePolicy(
+        f"{name}-{stack_name}-lambda-ecr-lifecycle",
+        repository=lambda_ecr_repo.name,
+        # policy=json.dumps({
+        #     "rules": [
+        #         {
+        #             "rulePriority": 1,
+        #             "description": "Keep last 10 images",
+        #             "selection": {
+        #                 "tagStatus": "tagged",
+        #                 "tagPrefixList": ["latest"],
+        #                 "countType": "imageCountMoreThan",
+        #                 "countNumber": 10
+        #             },
+        #             "action": {
+        #                 "type": "expire"
+        #             }
+        #         }
+        #     ]
+        # }),
+        # # Add lifecycle policy to auto-delete old images
+        policy="""{  
+            "rules": [{
+                "rulePriority": 1,
+                "selection": {
+                    "tagStatus": "any",
+                    "countType": "sinceImagePushed",
+                    "countUnit": "days",
+                    "countNumber": 1
+                },
+                "action": {"type": "expire"}
+            }]
+        }""",
+        opts=pulumi.ResourceOptions(depends_on=[lambda_ecr_repo])
+    )
     
     # Create IAM role for Lambda
     lambda_role = aws.iam.Role(
@@ -112,83 +189,6 @@ def create_message_processor_lambda(
             })
         ),
         tags={"Name": f"{name}-{stack_name}-lambda-policy"}
-    )
-
-    # Create ECR repository policy to allow Lambda service to pull images
-    ecr_policy = aws.ecr.RepositoryPolicy(
-        f"{name}-{stack_name}-ecr-policy",
-        repository=lambda_ecr_repo.name,
-        policy=pulumi.Output.all(lambda_role.arn, account_id).apply(
-            lambda args: json.dumps({
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Principal": {
-                            "Service": "lambda.amazonaws.com"
-                        },
-                        "Action": [
-                            "ecr:BatchGetImage",
-                            "ecr:GetDownloadUrlForLayer",
-                            "ecr:BatchCheckLayerAvailability"
-                        ],
-                        "Condition": {
-                            "StringEquals": {
-                                "aws:SourceAccount": args[1]
-                            }
-                        }
-                    },
-                    {
-                        "Effect": "Allow",
-                        "Principal": {
-                            "AWS": args[0]  # Lambda execution role ARN
-                        },
-                        "Action": [
-                            "ecr:BatchGetImage",
-                            "ecr:GetDownloadUrlForLayer",
-                            "ecr:BatchCheckLayerAvailability"
-                        ]
-                    }
-                ]
-            })
-        )
-    )
-
-    # Create a lifecycle policy to manage image retention
-    ecr_lifecycle_policy = aws.ecr.LifecyclePolicy(
-        f"{name}-{stack_name}-app-lifecycle",
-        repository=lambda_ecr_repo.name,
-        # policy=json.dumps({
-        #     "rules": [
-        #         {
-        #             "rulePriority": 1,
-        #             "description": "Keep last 10 images",
-        #             "selection": {
-        #                 "tagStatus": "tagged",
-        #                 "tagPrefixList": ["latest"],
-        #                 "countType": "imageCountMoreThan",
-        #                 "countNumber": 10
-        #             },
-        #             "action": {
-        #                 "type": "expire"
-        #             }
-        #         }
-        #     ]
-        # }),
-        # # Add lifecycle policy to auto-delete old images
-        policy="""{  
-            "rules": [{
-                "rulePriority": 1,
-                "selection": {
-                    "tagStatus": "any",
-                    "countType": "sinceImagePushed",
-                    "countUnit": "days",
-                    "countNumber": 1
-                },
-                "action": {"type": "expire"}
-            }]
-        }""",
-        opts=pulumi.ResourceOptions(depends_on=[lambda_ecr_repo])
     )
 
     # Attach AWS managed policies
