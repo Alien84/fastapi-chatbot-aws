@@ -13,6 +13,7 @@ from modules.lambda_functions import create_message_processor_lambda
 
 
 # Access configuration objects
+config = pulumi.Config()
 aws_config = pulumi.Config("aws")
 infra_config = pulumi.Config("infrastructure")
 
@@ -22,12 +23,14 @@ instance_type = infra_config.require("instanceType") # "t2.micro"
 key_name = infra_config.require("keyName")
 architecture = infra_config.require("architecture") #  # "single" or "autoscaling"
 name = infra_config.require("name") # "chatbot"
+deploy_stage = config.get("deploy_stage", "ecr")
 
 stack_name = pulumi.get_stack()
 
 pulumi.export("architecture", architecture)
 pulumi.export("region", region)
 pulumi.export("region1", aws.config.region)
+pulumi.export("deploy_stage", deploy_stage)
 
 # Generate a private key
 private_key = tls.PrivateKey(
@@ -430,7 +433,8 @@ message_processor_lambda = create_message_processor_lambda(
     vpc_id=network["vpc"].id,
     subnet_ids=[subnet.id for subnet in network["private_subnets"]],
     security_group_id=db_sg.id,
-    region=region
+    region=region,
+    deploy_stage='ecr'
 )
 
 

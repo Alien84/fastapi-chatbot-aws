@@ -10,7 +10,8 @@ def create_message_processor_lambda(
         subnet_ids, 
         security_group_id,
         region,
-        image_tag="latest"
+        image_tag="latest",
+        deploy_stage='ecr'
         ):
     """
     Creates a Lambda function using a Docker container.
@@ -184,8 +185,23 @@ def create_message_processor_lambda(
         # }),
         # # Add lifecycle policy to auto-delete old images
         policy="""{  
-            "rules": [{
+            "rules": [
+            {
                 "rulePriority": 1,
+                "description": "Keep last 10 images",
+                "selection": {
+                    "tagStatus": "tagged",
+                    "tagPrefixList": ["latest"],
+                    "countType": "imageCountMoreThan",
+                    "countNumber": 10
+                },
+                "action": {
+                    "type": "expire"
+                }
+            },
+            {
+                "rulePriority": 1,
+                "description": "Delete untagged images after 1 day",
                 "selection": {
                     "tagStatus": "any",
                     "countType": "sinceImagePushed",
@@ -193,7 +209,8 @@ def create_message_processor_lambda(
                     "countNumber": 1
                 },
                 "action": {"type": "expire"}
-            }]
+            }
+            ]
         }""",
         opts=pulumi.ResourceOptions(depends_on=[lambda_ecr_repo])
     )
@@ -229,123 +246,66 @@ def create_message_processor_lambda(
     image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-message-processor:latest"
     pulumi.export("lambda_image_uri", image_uri)
 
-    # Create Lambda function
-    lambda_function = aws.lambda_.Function(
-        f"{name}-{stack_name}-message-processor",
-        # Container image configuration
-        package_type="Image",
-        image_uri=image_uri,
-        role=lambda_role.arn,
-        
-        # Function configuration
-        timeout=300,                   # 5 minutes
-        memory_size=512,              # Memory in MB
-        architectures=["x86_64"],
-        
-        # VPC configuration
-        # vpc_config=aws.lambda_.FunctionVpcConfigArgs(
-        #     subnet_ids=subnet_ids,
-        #     security_group_ids=[security_group_id]
-        # ),
-        
-        # Environment variables
-        environment=aws.lambda_.FunctionEnvironmentArgs(
-            variables={
-                "DB_SSM_PREFIX": db_ssm_prefix
+    if deploy_stage in ["lambda", "all"]:
+        # Create Lambda function
+        lambda_function = aws.lambda_.Function(
+            f"{name}-{stack_name}-message-processor",
+            # Container image configuration
+            package_type="Image",
+            image_uri=image_uri,
+            role=lambda_role.arn,
+            
+            # Function configuration
+            timeout=300,                   # 5 minutes
+            memory_size=512,              # Memory in MB
+            architectures=["x86_64"],
+            
+            # VPC configuration
+            # vpc_config=aws.lambda_.FunctionVpcConfigArgs(
+            #     subnet_ids=subnet_ids,
+            #     security_group_ids=[security_group_id]
+            # ),
+            
+            # Environment variables
+            environment=aws.lambda_.FunctionEnvironmentArgs(
+                variables={
+                    "DB_SSM_PREFIX": db_ssm_prefix
+                }
+            ),
+
+            # Resource dependencies - include ECR policy
+            opts=pulumi.ResourceOptions(
+                depends_on=[
+                    lambda_ecr_repo,
+                    ecr_policy,
+                    basic_execution_attachment,
+                    vpc_execution_attachment,
+                    custom_policy_attachment
+                ]
+            ),
+            
+            # Tags
+            tags={
+                "Name": f"{name}-{stack_name}-message-processor",
+                "Environment": stack_name
             }
-        ),
+        )
 
-        # Resource dependencies - include ECR policy
-        opts=pulumi.ResourceOptions(
-            depends_on=[
-                lambda_ecr_repo,
-                ecr_policy,
-                basic_execution_attachment,
-                vpc_execution_attachment,
-                custom_policy_attachment
-            ]
-        ),
-        
-        # Tags
-        tags={
-            "Name": f"{name}-{stack_name}-message-processor",
-            "Environment": stack_name
+        # Export useful outputs
+        pulumi.export("lambda_function_name", lambda_function.name)
+        pulumi.export("lambda_function_arn", lambda_function.arn)
+        pulumi.export("lambda_function_invoke_arn", lambda_function.invoke_arn)
+
+        return {
+            "lambda_function": lambda_function,
+            "lambda_role": lambda_role,
+            "ecr_repository": lambda_ecr_repo,
+            "ecr_policy": ecr_policy,
+            "image_uri": image_uri
         }
-    )
-
-    # Export useful outputs
-    pulumi.export("lambda_function_name", lambda_function.name)
-    pulumi.export("lambda_function_arn", lambda_function.arn)
-    pulumi.export("lambda_function_invoke_arn", lambda_function.invoke_arn)
-
     return {
-        "lambda_function": lambda_function,
         "lambda_role": lambda_role,
         "ecr_repository": lambda_ecr_repo,
         "ecr_policy": ecr_policy,
         "image_uri": image_uri
-    }
-
-
-def create_ecr_repository_only(name, stack_name):
-    """
-    Creates only the ECR repository for CI/CD pipeline to push images to.
-    Use this if you want to create the repository separately from the Lambda function.
-    
-    Args:
-        name: Base name for resources
-        stack_name: Stack name for resource naming
-    """
-    # Get current AWS account ID
-    current = aws.get_caller_identity()
-    account_id = current.account_id
-    
-    lambda_ecr_repo = aws.ecr.Repository(
-        f"{name}-{stack_name}-lambda-message-processor",
-        name=f"{name}-{stack_name}-lambda-message-processor",
-        image_tag_mutability="MUTABLE",
-        image_scanning_configuration=aws.ecr.RepositoryImageScanningConfigurationArgs(
-            scan_on_push=True,
-        ),
-        force_delete=True,
-        tags={"Name": f"{name}-{stack_name}-lambda-message-processor"}
-    )
-    
-    # Create ECR repository policy to allow Lambda service access
-    ecr_policy = aws.ecr.RepositoryPolicy(
-        f"{name}-{stack_name}-ecr-policy",
-        repository=lambda_ecr_repo.name,
-        policy=pulumi.Output.all(account_id).apply(
-            lambda args: json.dumps({
-                "Version": "2012-10-17",
-                "Statement": [
-                    {
-                        "Effect": "Allow",
-                        "Principal": {
-                            "Service": "lambda.amazonaws.com"
-                        },
-                        "Action": [
-                            "ecr:BatchGetImage",
-                            "ecr:GetDownloadUrlForLayer",
-                            "ecr:BatchCheckLayerAvailability"
-                        ],
-                        "Condition": {
-                            "StringEquals": {
-                                "aws:SourceAccount": args[0]
-                            }
-                        }
-                    }
-                ]
-            })
-        )
-    )
-    
-    # Export repository information for CI/CD pipeline
-    pulumi.export("lambda_ecr_repo_url", lambda_ecr_repo.repository_url)
-    pulumi.export("lambda_ecr_repo_name", lambda_ecr_repo.name)
-    pulumi.export("lambda_ecr_repo_arn", lambda_ecr_repo.arn)
-    
-    return {
-        "ecr_repository": lambda_ecr_repo,
-        "ecr_policy": ecr_policy
     }
