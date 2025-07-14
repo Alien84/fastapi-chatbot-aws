@@ -77,8 +77,8 @@ def create_message_processor_lambda(
                             "ssm:DescribeParameters"
                         ],
                         "Resource": [
-                            f"arn:aws:ssm:{region}:*:parameter{db_ssm_prefix}/",
-                            f"arn:aws:ssm:{region}:*:parameter{db_ssm_prefix}/*"
+                            f"arn:aws:ssm:{region}:555576841436:parameter/{name}/{stack_name}/db",
+                            f"arn:aws:ssm:{region}:555576841436:parameter/{name}/{stack_name}/db/*"
                         ]
                     },
                     {
@@ -226,6 +226,7 @@ def create_message_processor_lambda(
     # Construct image URI - CI/CD pipeline should push image with this URI
     image_uri = pulumi.Output.concat(lambda_ecr_repo.repository_url, ":", image_tag)
     image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-message-processor:latest"
+    image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-message-processor:latest"
     pulumi.export("lambda_image_uri", image_uri)
 
     # Create Lambda function
@@ -242,10 +243,10 @@ def create_message_processor_lambda(
         architectures=["x86_64"],
         
         # VPC configuration
-        vpc_config=aws.lambda_.FunctionVpcConfigArgs(
-            subnet_ids=subnet_ids,
-            security_group_ids=[security_group_id]
-        ),
+        # vpc_config=aws.lambda_.FunctionVpcConfigArgs(
+        #     subnet_ids=subnet_ids,
+        #     security_group_ids=[security_group_id]
+        # ),
         
         # Environment variables
         environment=aws.lambda_.FunctionEnvironmentArgs(
