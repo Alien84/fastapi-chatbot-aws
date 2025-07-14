@@ -21,12 +21,12 @@ on:
         description: 'Type "DEPLOY" to confirm production deployment'
         required: true
         type: string
-      deploy_stage:
-        description: 'Deployment stage'
-        required: true
-        default: 'ecr'
-        type: choice
-        options: [ecr, lambda, all]
+      # deploy_stage:
+      #   description: 'Deployment stage'
+      #   required: true
+      #   default: 'ecr'
+      #   type: choice
+      #   options: [ecr, lambda, all]
 
 # Required permissions for OIDC token
 permissions:
@@ -192,20 +192,21 @@ jobs:
           LAMBDA_IMAGE_TAG_COMMIT="${{ env.LAMBDA_ECR_URL }}:${{ github.sha }}"
           LAMBDA_IMAGE_TAG_ENV="${{ env.LAMBDA_ECR_URL }}:${{ env.ENVIRONMENT }}-latest"
           
-          echo "Building Dockerlambda image..."
+          echo "Building Docker Lambda image..."
           echo "Latest tag: $LAMBDA_IMAGE_TAG_LATEST"
           echo "Commit tag: $LAMBDA_IMAGE_TAG_COMMIT"
           echo "Environment tag: $LAMBDA_IMAGE_TAG_ENV"
           
           # Build the Docker image with multiple tags
-          docker build \
+          docker buildx build \
+            --platform linux/amd64 \
             -t $LAMBDA_IMAGE_TAG_LATEST \
             -t $LAMBDA_IMAGE_TAG_COMMIT \
             -t $LAMBDA_IMAGE_TAG_ENV \
             --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
             --build-arg VCS_REF=${{ github.sha }} \
             --build-arg VERSION=${{ env.ENVIRONMENT }}-${{ github.sha }} \
-            .
+            . --load
           
           # Push all tags
           echo "Pushing Docker images..."
@@ -219,6 +220,14 @@ jobs:
           # Set output for later steps
           echo "LAMBDA_IMAGE_URI=$LAMBDA_IMAGE_TAG_LATEST" >> $GITHUB_ENV
           echo "LAMBDA_IMAGE_TAG=${{ github.sha }}" >> $GITHUB_ENV
+
+          # Verify the architecture
+          docker inspect lambda-psycopg2-test --format='{{.Architecture}}'
+          # Should output: amd64
+
+          # Wait a few seconds for container to start
+          sleep 5
+
 
 
 
