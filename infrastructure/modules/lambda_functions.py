@@ -200,7 +200,7 @@ def create_message_processor_lambda(
                 }
             },
             {
-                "rulePriority": 1,
+                "rulePriority": 2,
                 "description": "Delete untagged images after 1 day",
                 "selection": {
                     "tagStatus": "any",
