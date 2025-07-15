@@ -4,4 +4,4 @@ config:
   infrastructure:instanceType: t2.micro
   infrastructure:architecture: single
   infrastructure:name: chatbot
-  fastapi-chatbot-infrastructure:deploy_stage: lambdaaaaa
+  fastapi-chatbot-infrastructure:deploy_stage: lambda

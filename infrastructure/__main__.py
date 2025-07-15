@@ -438,7 +438,7 @@ message_processor_lambda = create_message_processor_lambda(
     region=region,
     image_uri=lambda_image_uri,
     image_tag=lambda_image_tag,
-    deploy_stage='ecr'
+    deploy_stage=deploy_stage
 )
 
 

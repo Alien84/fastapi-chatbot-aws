@@ -226,7 +226,7 @@ jobs:
           # Set output for later steps
           echo "LAMBDA_IMAGE_URI=$LAMBDA_IMAGE_TAG_LATEST" >> $GITHUB_ENV
           echo "LAMBDA_IMAGE_TAG=latest" >> $GITHUB_ENV
-          echo "Lmbda Image URI: ${{ env.LAMBDA_IMAGE_URI }}"
+          echo "Lambda Image URI: $LAMBDA_IMAGE_TAG_LATEST"
 
           echo "Waiting 10 seconds for ECR to process the images..."
           sleep 10
