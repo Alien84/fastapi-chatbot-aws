@@ -10,6 +10,7 @@ def create_message_processor_lambda(
         subnet_ids, 
         security_group_id,
         region,
+        image_uri=None,
         image_tag="latest",
         deploy_stage='ecr'
         ):
@@ -241,9 +242,9 @@ def create_message_processor_lambda(
     pulumi.export("lambda_ecr_repo_arn", lambda_ecr_repo.arn)
     
     # Construct image URI - CI/CD pipeline should push image with this URI
-    image_uri = pulumi.Output.concat(lambda_ecr_repo.repository_url, ":", image_tag)
-    image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-message-processor:latest"
-    image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-message-processor:latest"
+    # image_uri = pulumi.Output.concat(lambda_ecr_repo.repository_url, ":", image_tag)
+    # image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-message-processor:latest"
+    # image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-message-processor:latest"
     pulumi.export("lambda_image_uri", image_uri)
 
     if deploy_stage in ["lambda", "all"]:

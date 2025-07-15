@@ -24,6 +24,8 @@ key_name = infra_config.require("keyName")
 architecture = infra_config.require("architecture") #  # "single" or "autoscaling"
 name = infra_config.require("name") # "chatbot"
 deploy_stage = config.get("deploy_stage", "ecr")
+lambda_image_uri = config.get("lambda_image_uri", "")
+lambda_image_tag = config.get("lambda_image_tag", "latest")
 
 stack_name = pulumi.get_stack()
 
@@ -434,6 +436,8 @@ message_processor_lambda = create_message_processor_lambda(
     subnet_ids=[subnet.id for subnet in network["private_subnets"]],
     security_group_id=db_sg.id,
     region=region,
+    image_uri=lambda_image_uri,
+    image_tag=lambda_image_tag,
     deploy_stage='ecr'
 )
 

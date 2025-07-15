@@ -136,8 +136,8 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Set the environment variable for ECR URL
-      - name: Set Pulumi config
+      # Set the pulumi environment variable for initial ECR deployment (This is set for lambda ecr, can bb extended for other ecrs)
+      - name: Set Pulumi config for initial ECR deployment
         run: |
           cd infrastructure
           pulumi config set deploy_stage ecr --stack ${{ env.ENVIRONMENT }}
@@ -183,7 +183,7 @@ jobs:
 
       # Build and push Docker image
       - name: Build and push Docker Lambda image
-        id: build-push
+        id: build-push-Lambda
         run: |
           cd lambda_functions/message_processor
           
@@ -200,13 +200,17 @@ jobs:
           # Build the Docker image with multiple tags
           docker buildx build \
             --platform linux/amd64 \
-            -t $LAMBDA_IMAGE_TAG_LATEST \
-            -t $LAMBDA_IMAGE_TAG_COMMIT \
-            -t $LAMBDA_IMAGE_TAG_ENV \
             --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
             --build-arg VCS_REF=${{ github.sha }} \
             --build-arg VERSION=${{ env.ENVIRONMENT }}-${{ github.sha }} \
-            . --load
+            -t temp-lambda-image \
+            --load \
+            .
+
+          # Tag the image with all required tags
+          docker tag temp-lambda-image $LAMBDA_IMAGE_TAG_LATEST
+          docker tag temp-lambda-image $LAMBDA_IMAGE_TAG_COMMIT
+          docker tag temp-lambda-image $LAMBDA_IMAGE_TAG_ENV
           
           # Push all tags
           echo "Pushing Docker images..."
@@ -214,357 +218,360 @@ jobs:
           docker push $LAMBDA_IMAGE_TAG_COMMIT
           docker push $LAMBDA_IMAGE_TAG_ENV
 
+          # Clean up local temp image
+          docker rmi temp-lambda-image || true
+
           echo "Docker image pushed successfully"
-          echo "LAMBDA_IMAGE_URI=$LAMBDA_ECR_URL:${{ github.sha }}" >> $GITHUB_ENV
           
           # Set output for later steps
           echo "LAMBDA_IMAGE_URI=$LAMBDA_IMAGE_TAG_LATEST" >> $GITHUB_ENV
-          echo "LAMBDA_IMAGE_TAG=${{ github.sha }}" >> $GITHUB_ENV
+          echo "LAMBDA_IMAGE_TAG=latest" >> $GITHUB_ENV
+          echo "Lmbda Image URI: ${{ env.LAMBDA_IMAGE_URI }}"
 
-          # Verify the architecture
-          docker inspect lambda-psycopg2-test --format='{{.Architecture}}'
-          # Should output: amd64
-
-          # Wait a few seconds for container to start
-          sleep 5
+          echo "Waiting 10 seconds for ECR to process the images..."
+          sleep 10
+          echo "Build and push for lambda function process completed"
 
 
+      # Set the pulumi environment variable for final deployment
+      - name: Set Pulumi config for final deployment
+        run: |
+          cd infrastructure
+          PROJECT_NAME=$(grep '^name:' Pulumi.yaml | awk '{print $2}' | tr -d '"')
+          pulumi config set ${PROJECT_NAME}:deploy_stage lambda --stack ${{ env.ENVIRONMENT }}
+          pulumi config set ${PROJECT_NAME}:lambda_image_tag ${{ env.LAMBDA_IMAGE_TAG }} --stack ${{ env.ENVIRONMENT }}
+          pulumi config set ${PROJECT_NAME}:lambda_image_uri ${{ env.LAMBDA_IMAGE_URI }} --stack ${{ env.ENVIRONMENT }}
 
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+      
+      # Deploy infrastructure first to ensure ECR repository exists
+      - name: Deploy infrastructure with Pulumi
+        id: deploy-infrastructure
+        uses: pulumi/actions@v5
+        with:
+          command: up
+          stack-name: ${{ env.ENVIRONMENT }}
+          work-dir: infrastructure
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          # REMOVE THESE LINES - AWS credentials are configured automatically using IAM Role
+          # AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          # AWS_REGION: ${{ secrets.AWS_REGION }}  # Keep this if Pulumi needs it explicitly
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
 
-
-
+      # Get ECR repository URL from Pulumi output
+      - name: Get ECR repository URL
+        id: get-ecr-url
+        run: |
+          cd infrastructure
+          pulumi stack select ${{ env.ENVIRONMENT }}
+          ECR_URL=$(pulumi stack output ecr_repository_url)
+          echo "ECR_URL=$ECR_URL" >> $GITHUB_ENV
+          echo "ECR repository URL: $ECR_URL"
+          
+          # Also extract the repository name for cleanup purposes
+          ECR_REPO_NAME=$(echo $ECR_URL | cut -d'/' -f2)
+          echo "ECR_REPO_NAME=$ECR_REPO_NAME" >> $GITHUB_ENV
+          echo "ECR repository name: $ECR_REPO_NAME"
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
 
       
-      
-      
-      
-      # # Deploy infrastructure first to ensure ECR repository exists
-      # - name: Deploy infrastructure with Pulumi
-      #   id: deploy-infrastructure
-      #   uses: pulumi/actions@v5
-      #   with:
-      #     command: up
-      #     stack-name: ${{ env.ENVIRONMENT }}
-      #     work-dir: infrastructure
-      #   env:
-      #     PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-      #     # REMOVE THESE LINES - AWS credentials are configured automatically using IAM Role
-      #     # AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      #     # AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      #     # AWS_REGION: ${{ secrets.AWS_REGION }}  # Keep this if Pulumi needs it explicitly
-      #     AWS_REGION: ${{ secrets.AWS_REGION }}
-      #     AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
-
-      # # Get ECR repository URL from Pulumi output
-      # - name: Get ECR repository URL
-      #   id: get-ecr-url
-      #   run: |
-      #     cd infrastructure
-      #     pulumi stack select ${{ env.ENVIRONMENT }}
-      #     ECR_URL=$(pulumi stack output ecr_repository_url)
-      #     echo "ECR_URL=$ECR_URL" >> $GITHUB_ENV
-      #     echo "ECR repository URL: $ECR_URL"
-          
-      #     # Also extract the repository name for cleanup purposes
-      #     ECR_REPO_NAME=$(echo $ECR_URL | cut -d'/' -f2)
-      #     echo "ECR_REPO_NAME=$ECR_REPO_NAME" >> $GITHUB_ENV
-      #     echo "ECR repository name: $ECR_REPO_NAME"
-      #   env:
-      #     PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-
-      
 
 
-      # # Build and push Docker image
-      # - name: Build and push Docker image
-      #   id: build-push
-      #   run: |
-      #     cd app
+      # Build and push Docker image
+      - name: Build and push Docker image
+        id: build-push
+        run: |
+          cd app
           
-      #     # Create image tags
-      #     IMAGE_TAG_LATEST="${{ env.ECR_URL }}:latest"
-      #     IMAGE_TAG_COMMIT="${{ env.ECR_URL }}:${{ github.sha }}"
-      #     IMAGE_TAG_ENV="${{ env.ECR_URL }}:${{ env.ENVIRONMENT }}-latest"
+          # Create image tags
+          IMAGE_TAG_LATEST="${{ env.ECR_URL }}:latest"
+          IMAGE_TAG_COMMIT="${{ env.ECR_URL }}:${{ github.sha }}"
+          IMAGE_TAG_ENV="${{ env.ECR_URL }}:${{ env.ENVIRONMENT }}-latest"
           
-      #     echo "Building Docker image..."
-      #     echo "Latest tag: $IMAGE_TAG_LATEST"
-      #     echo "Commit tag: $IMAGE_TAG_COMMIT"
-      #     echo "Environment tag: $IMAGE_TAG_ENV"
+          echo "Building Docker image..."
+          echo "Latest tag: $IMAGE_TAG_LATEST"
+          echo "Commit tag: $IMAGE_TAG_COMMIT"
+          echo "Environment tag: $IMAGE_TAG_ENV"
           
-      #     # Build the Docker image with multiple tags
-      #     docker build \
-      #       -t $IMAGE_TAG_LATEST \
-      #       -t $IMAGE_TAG_COMMIT \
-      #       -t $IMAGE_TAG_ENV \
-      #       --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
-      #       --build-arg VCS_REF=${{ github.sha }} \
-      #       --build-arg VERSION=${{ env.ENVIRONMENT }}-${{ github.sha }} \
-      #       .
+          # Build the Docker image with multiple tags
+          docker build \
+            -t $IMAGE_TAG_LATEST \
+            -t $IMAGE_TAG_COMMIT \
+            -t $IMAGE_TAG_ENV \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg VCS_REF=${{ github.sha }} \
+            --build-arg VERSION=${{ env.ENVIRONMENT }}-${{ github.sha }} \
+            .
           
-      #     # Push all tags
-      #     echo "Pushing Docker images..."
-      #     docker push $IMAGE_TAG_LATEST
-      #     docker push $IMAGE_TAG_COMMIT
-      #     docker push $IMAGE_TAG_ENV
+          # Push all tags
+          echo "Pushing Docker images..."
+          docker push $IMAGE_TAG_LATEST
+          docker push $IMAGE_TAG_COMMIT
+          docker push $IMAGE_TAG_ENV
 
-      #     echo "Docker image pushed successfully"
-      #     echo "IMAGE_URI=$ECR_URL:${{ github.sha }}" >> $GITHUB_ENV
+          echo "Docker image pushed successfully"
+          echo "IMAGE_URI=$ECR_URL:${{ github.sha }}" >> $GITHUB_ENV
           
-      #     # Set output for later steps
-      #     echo "IMAGE_URI=$IMAGE_TAG_LATEST" >> $GITHUB_ENV
-      #     echo "IMAGE_TAG=${{ github.sha }}" >> $GITHUB_ENV
+          # Set output for later steps
+          echo "IMAGE_URI=$IMAGE_TAG_LATEST" >> $GITHUB_ENV
+          echo "IMAGE_TAG=${{ github.sha }}" >> $GITHUB_ENV
 
 
-      # # Trigger application deployment on EC2 instances
-      # - name: Trigger application deployment
-      #   id: deploy-app
-      #   run: |
-      #     echo "Triggering deployment of new container image..."
+      # Trigger application deployment on EC2 instances
+      - name: Trigger application deployment
+        id: deploy-app
+        run: |
+          echo "Triggering deployment of new container image..."
           
-      #     # Get deployment architecture from Pulumi outputs
-      #     cd infrastructure
-      #     pulumi stack select ${{ env.ENVIRONMENT }}
+          # Get deployment architecture from Pulumi outputs
+          cd infrastructure
+          pulumi stack select ${{ env.ENVIRONMENT }}
           
-      #     # Check if auto-scaling is enabled for this stack
-      #     ARCHITECTURE=$(pulumi config get infrastructure:architecture || echo "single")
-      #     echo "Deployment architecture: $ARCHITECTURE"
+          # Check if auto-scaling is enabled for this stack
+          ARCHITECTURE=$(pulumi config get infrastructure:architecture || echo "single")
+          echo "Deployment architecture: $ARCHITECTURE"
           
-      #     if [ "$ARCHITECTURE" = "autoscaling" ]; then
-      #       echo "🔄 Deploying to Auto Scaling Group architecture..."
+          if [ "$ARCHITECTURE" = "autoscaling" ]; then
+            echo "🔄 Deploying to Auto Scaling Group architecture..."
             
-      #       # Get the Auto Scaling Group name for the environment
-      #       ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
-      #         --query "AutoScalingGroups[?contains(Tags[?Key==\`Name\`].Value, \`chatbot\`) && contains(Tags[?Key==\`Environment\`].Value, \`${{ env.ENVIRONMENT }}\`)].AutoScalingGroupName" \
-      #         --output text)
+            # Get the Auto Scaling Group name for the environment
+            ASG_NAME=$(aws autoscaling describe-auto-scaling-groups \
+              --query "AutoScalingGroups[?contains(Tags[?Key==\`Name\`].Value, \`chatbot\`) && contains(Tags[?Key==\`Environment\`].Value, \`${{ env.ENVIRONMENT }}\`)].AutoScalingGroupName" \
+              --output text)
             
-      #       if [ -z "$ASG_NAME" ]; then
-      #         echo "❌ Auto Scaling Group not found for environment: ${{ env.ENVIRONMENT }}"
-      #         exit 1
-      #       else
-      #         echo "✅ Found Auto Scaling Group: $ASG_NAME"
+            if [ -z "$ASG_NAME" ]; then
+              echo "❌ Auto Scaling Group not found for environment: ${{ env.ENVIRONMENT }}"
+              exit 1
+            else
+              echo "✅ Found Auto Scaling Group: $ASG_NAME"
               
-      #         # Start instance refresh to deploy new containers
-      #         REFRESH_ID=$(aws autoscaling start-instance-refresh \
-      #           --auto-scaling-group-name $ASG_NAME \
-      #           --preferences '{
-      #             "InstanceWarmup": 300,
-      #             "MinHealthyPercentage": 50,
-      #             "MaxHealthyPercentage": 200,
-      #             "CheckpointPercentages": [50],
-      #             "CheckpointDelay": 300
-      #           }' \
-      #           --query 'InstanceRefreshId' \
+              # Start instance refresh to deploy new containers
+              REFRESH_ID=$(aws autoscaling start-instance-refresh \
+                --auto-scaling-group-name $ASG_NAME \
+                --preferences '{
+                  "InstanceWarmup": 300,
+                  "MinHealthyPercentage": 50,
+                  "MaxHealthyPercentage": 200,
+                  "CheckpointPercentages": [50],
+                  "CheckpointDelay": 300
+                }' \
+                --query 'InstanceRefreshId' \
+                --output text)
+              
+              echo "🚀 Started instance refresh: $REFRESH_ID"
+              echo "REFRESH_ID=$REFRESH_ID" >> $GITHUB_ENV
+              echo "ASG_NAME=$ASG_NAME" >> $GITHUB_ENV
+              echo "DEPLOYMENT_TYPE=autoscaling" >> $GITHUB_ENV
+            fi
+            
+          else
+            echo "🖥️ Deploying to single EC2 instance architecture..."
+            
+            # Get the single EC2 instance ID for the environment
+            INSTANCE_ID=$(aws ec2 describe-instances \
+              --filters \
+                "Name=tag:Name,Values=$(pulumi config get infrastructure:name || echo "chatbot")-dev-server" \
+                "Name=tag:Environment,Values=${{ env.ENVIRONMENT }}" \
+                "Name=instance-state-name,Values=running" \
+              --query "Reservations[0].Instances[0].InstanceId" \
+              --output text)
+            
+            if [ "$INSTANCE_ID" = "null" ] || [ -z "$INSTANCE_ID" ]; then
+              echo "❌ No running EC2 instance found for environment: ${{ env.ENVIRONMENT }}"
+              exit 1
+            else
+              echo "✅ Found EC2 instance: $INSTANCE_ID"
+              
+              # Create a command to update the container on the instance
+              COMMAND_ID=$(aws ssm send-command \
+                --instance-ids $INSTANCE_ID \
+                --document-name "AWS-RunShellScript" \
+                --parameters 'commands=[
+                  "cd /opt/chatbot-dev",
+                  "echo \"Pulling latest container image...\"",
+                  "./deploy.sh",
+                  "echo \"Container deployment completed\"",
+                  "docker ps | grep chatbot || echo \"Warning: chatbot container not found\"",
+                  "curl -f http://localhost:8000/health || echo \"Warning: health check failed\""
+                ]' \
+                --comment "Deploy new chatbot container - GitHub Actions Run ${{ github.run_id }}" \
+                --timeout-seconds 600 \
+                --query 'Command.CommandId' \
+                --output text)
+              
+              echo "🚀 Started SSM command execution: $COMMAND_ID"
+              echo "COMMAND_ID=$COMMAND_ID" >> $GITHUB_ENV
+              echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+              echo "DEPLOYMENT_TYPE=single" >> $GITHUB_ENV
+            fi
+          fi
+          
+          cd ..
+
+      # Monitor deployment progress (updated for both architectures)
+      # - name: Monitor deployment progress
+      #   if: env.DEPLOYMENT_TYPE != ''
+      #   run: |
+      #     if [ "${{ env.DEPLOYMENT_TYPE }}" = "autoscaling" ]; then
+      #       echo "📊 Monitoring Auto Scaling Group instance refresh: ${{ env.REFRESH_ID }}"
+            
+      #       # Monitor the refresh for up to 20 minutes
+      #       for i in {1..40}; do
+      #         STATUS=$(aws autoscaling describe-instance-refreshes \
+      #           --auto-scaling-group-name ${{ env.ASG_NAME }} \
+      #           --instance-refresh-ids ${{ env.REFRESH_ID }} \
+      #           --query 'InstanceRefreshes[0].Status' \
       #           --output text)
               
-      #         echo "🚀 Started instance refresh: $REFRESH_ID"
-      #         echo "REFRESH_ID=$REFRESH_ID" >> $GITHUB_ENV
-      #         echo "ASG_NAME=$ASG_NAME" >> $GITHUB_ENV
-      #         echo "DEPLOYMENT_TYPE=autoscaling" >> $GITHUB_ENV
+      #         PERCENTAGE=$(aws autoscaling describe-instance-refreshes \
+      #           --auto-scaling-group-name ${{ env.ASG_NAME }} \
+      #           --instance-refresh-ids ${{ env.REFRESH_ID }} \
+      #           --query 'InstanceRefreshes[0].PercentageComplete' \
+      #           --output text)
+              
+      #         echo "Instance refresh status: $STATUS (${PERCENTAGE}% complete)"
+              
+      #         if [ "$STATUS" = "Successful" ]; then
+      #           echo "✅ Auto Scaling Group deployment completed successfully!"
+      #           break
+      #         elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+      #           echo "❌ Auto Scaling Group deployment failed with status: $STATUS"
+                
+      #           # Get more details about the failure
+      #           aws autoscaling describe-instance-refreshes \
+      #             --auto-scaling-group-name ${{ env.ASG_NAME }} \
+      #             --instance-refresh-ids ${{ env.REFRESH_ID }} \
+      #             --query 'InstanceRefreshes[0]' \
+      #             --output table
+                  
+      #           exit 1
+      #         fi
+              
+      #         sleep 30
+      #       done
+            
+      #       if [ "$STATUS" != "Successful" ]; then
+      #         echo "❌ Auto Scaling Group deployment timed out after 20 minutes"
+      #         exit 1
       #       fi
             
-      #     else
-      #       echo "🖥️ Deploying to single EC2 instance architecture..."
+      #     elif [ "${{ env.DEPLOYMENT_TYPE }}" = "single" ]; then
+      #       echo "📊 Monitoring single instance SSM command: ${{ env.COMMAND_ID }}"
             
-      #       # Get the single EC2 instance ID for the environment
-      #       INSTANCE_ID=$(aws ec2 describe-instances \
-      #         --filters \
-      #           "Name=tag:Name,Values=$(pulumi config get infrastructure:name || echo "chatbot")-dev-server" \
-      #           "Name=tag:Environment,Values=${{ env.ENVIRONMENT }}" \
-      #           "Name=instance-state-name,Values=running" \
-      #         --query "Reservations[0].Instances[0].InstanceId" \
-      #         --output text)
+      #       # Monitor the SSM command for up to 10 minutes
+      #       for i in {1..20}; do
+      #         STATUS=$(aws ssm get-command-invocation \
+      #           --command-id ${{ env.COMMAND_ID }} \
+      #           --instance-id ${{ env.INSTANCE_ID }} \
+      #           --query 'Status' \
+      #           --output text 2>/dev/null || echo "InProgress")
+              
+      #         echo "SSM command status: $STATUS"
+              
+      #         if [ "$STATUS" = "Success" ]; then
+      #           echo "✅ Single instance deployment completed successfully!"
+                
+      #           # Show the command output
+      #           echo "📄 Command output:"
+      #           aws ssm get-command-invocation \
+      #             --command-id ${{ env.COMMAND_ID }} \
+      #             --instance-id ${{ env.INSTANCE_ID }} \
+      #             --query 'StandardOutputContent' \
+      #             --output text
+      #           break
+                
+      #         elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
+      #           echo "❌ Single instance deployment failed with status: $STATUS"
+                
+      #           # Show the error output
+      #           echo "📄 Error output:"
+      #           aws ssm get-command-invocation \
+      #             --command-id ${{ env.COMMAND_ID }} \
+      #             --instance-id ${{ env.INSTANCE_ID }} \
+      #             --query 'StandardErrorContent' \
+      #             --output text
+                  
+      #           exit 1
+      #         fi
+              
+      #         sleep 30
+      #       done
             
-      #       if [ "$INSTANCE_ID" = "null" ] || [ -z "$INSTANCE_ID" ]; then
-      #         echo "❌ No running EC2 instance found for environment: ${{ env.ENVIRONMENT }}"
+      #       if [ "$STATUS" != "Success" ]; then
+      #         echo "❌ Single instance deployment timed out after 10 minutes"
       #         exit 1
-      #       else
-      #         echo "✅ Found EC2 instance: $INSTANCE_ID"
-              
-      #         # Create a command to update the container on the instance
-      #         COMMAND_ID=$(aws ssm send-command \
-      #           --instance-ids $INSTANCE_ID \
-      #           --document-name "AWS-RunShellScript" \
-      #           --parameters 'commands=[
-      #             "cd /opt/chatbot-dev",
-      #             "echo \"Pulling latest container image...\"",
-      #             "./deploy.sh",
-      #             "echo \"Container deployment completed\"",
-      #             "docker ps | grep chatbot || echo \"Warning: chatbot container not found\"",
-      #             "curl -f http://localhost:8000/health || echo \"Warning: health check failed\""
-      #           ]' \
-      #           --comment "Deploy new chatbot container - GitHub Actions Run ${{ github.run_id }}" \
-      #           --timeout-seconds 600 \
-      #           --query 'Command.CommandId' \
-      #           --output text)
-              
-      #         echo "🚀 Started SSM command execution: $COMMAND_ID"
-      #         echo "COMMAND_ID=$COMMAND_ID" >> $GITHUB_ENV
-      #         echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
-      #         echo "DEPLOYMENT_TYPE=single" >> $GITHUB_ENV
       #       fi
       #     fi
-          
-      #     cd ..
 
-      # # Monitor deployment progress (updated for both architectures)
-      # # - name: Monitor deployment progress
-      # #   if: env.DEPLOYMENT_TYPE != ''
-      # #   run: |
-      # #     if [ "${{ env.DEPLOYMENT_TYPE }}" = "autoscaling" ]; then
-      # #       echo "📊 Monitoring Auto Scaling Group instance refresh: ${{ env.REFRESH_ID }}"
-            
-      # #       # Monitor the refresh for up to 20 minutes
-      # #       for i in {1..40}; do
-      # #         STATUS=$(aws autoscaling describe-instance-refreshes \
-      # #           --auto-scaling-group-name ${{ env.ASG_NAME }} \
-      # #           --instance-refresh-ids ${{ env.REFRESH_ID }} \
-      # #           --query 'InstanceRefreshes[0].Status' \
-      # #           --output text)
-              
-      # #         PERCENTAGE=$(aws autoscaling describe-instance-refreshes \
-      # #           --auto-scaling-group-name ${{ env.ASG_NAME }} \
-      # #           --instance-refresh-ids ${{ env.REFRESH_ID }} \
-      # #           --query 'InstanceRefreshes[0].PercentageComplete' \
-      # #           --output text)
-              
-      # #         echo "Instance refresh status: $STATUS (${PERCENTAGE}% complete)"
-              
-      # #         if [ "$STATUS" = "Successful" ]; then
-      # #           echo "✅ Auto Scaling Group deployment completed successfully!"
-      # #           break
-      # #         elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
-      # #           echo "❌ Auto Scaling Group deployment failed with status: $STATUS"
-                
-      # #           # Get more details about the failure
-      # #           aws autoscaling describe-instance-refreshes \
-      # #             --auto-scaling-group-name ${{ env.ASG_NAME }} \
-      # #             --instance-refresh-ids ${{ env.REFRESH_ID }} \
-      # #             --query 'InstanceRefreshes[0]' \
-      # #             --output table
-                  
-      # #           exit 1
-      # #         fi
-              
-      # #         sleep 30
-      # #       done
-            
-      # #       if [ "$STATUS" != "Successful" ]; then
-      # #         echo "❌ Auto Scaling Group deployment timed out after 20 minutes"
-      # #         exit 1
-      # #       fi
-            
-      # #     elif [ "${{ env.DEPLOYMENT_TYPE }}" = "single" ]; then
-      # #       echo "📊 Monitoring single instance SSM command: ${{ env.COMMAND_ID }}"
-            
-      # #       # Monitor the SSM command for up to 10 minutes
-      # #       for i in {1..20}; do
-      # #         STATUS=$(aws ssm get-command-invocation \
-      # #           --command-id ${{ env.COMMAND_ID }} \
-      # #           --instance-id ${{ env.INSTANCE_ID }} \
-      # #           --query 'Status' \
-      # #           --output text 2>/dev/null || echo "InProgress")
-              
-      # #         echo "SSM command status: $STATUS"
-              
-      # #         if [ "$STATUS" = "Success" ]; then
-      # #           echo "✅ Single instance deployment completed successfully!"
-                
-      # #           # Show the command output
-      # #           echo "📄 Command output:"
-      # #           aws ssm get-command-invocation \
-      # #             --command-id ${{ env.COMMAND_ID }} \
-      # #             --instance-id ${{ env.INSTANCE_ID }} \
-      # #             --query 'StandardOutputContent' \
-      # #             --output text
-      # #           break
-                
-      # #         elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ]; then
-      # #           echo "❌ Single instance deployment failed with status: $STATUS"
-                
-      # #           # Show the error output
-      # #           echo "📄 Error output:"
-      # #           aws ssm get-command-invocation \
-      # #             --command-id ${{ env.COMMAND_ID }} \
-      # #             --instance-id ${{ env.INSTANCE_ID }} \
-      # #             --query 'StandardErrorContent' \
-      # #             --output text
-                  
-      # #           exit 1
-      # #         fi
-              
-      # #         sleep 30
-      # #       done
-            
-      # #       if [ "$STATUS" != "Success" ]; then
-      # #         echo "❌ Single instance deployment timed out after 10 minutes"
-      # #         exit 1
-      # #       fi
-      # #     fi
-
-      # # - name: Verify Deployment
-      # #   id: verify
-      # #   run: |
-      # #     cd infrastructure
-      # #     pulumi stack select ${{ env.ENVIRONMENT }}
-      # #     echo "Verifying deployment for stack: ${{ env.ENVIRONMENT }}"
+      # - name: Verify Deployment
+      #   id: verify
+      #   run: |
+      #     cd infrastructure
+      #     pulumi stack select ${{ env.ENVIRONMENT }}
+      #     echo "Verifying deployment for stack: ${{ env.ENVIRONMENT }}"
           
-      # #     APP_URL=$(pulumi stack output application_url)
-      # #     echo "Testing application URL: $APP_URL"
+      #     APP_URL=$(pulumi stack output application_url)
+      #     echo "Testing application URL: $APP_URL"
           
-      # #     # Test with retries
-      # #     for i in {1..10}; do
-      # #       HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $APP_URL/health)
+      #     # Test with retries
+      #     for i in {1..10}; do
+      #       HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $APP_URL/health)
             
-      # #       if [ $HTTP_STATUS -eq 200 ]; then
-      # #         echo "✅ Deployment verification successful with status $HTTP_STATUS"
-      # #         echo "Application URL: $APP_URL"
-      # #         break
-      # #       else
-      # #         echo "Attempt $i: Received status $HTTP_STATUS, retrying in 30 seconds..."
-      # #         if [ $i -eq 10 ]; then
-      # #           echo "❌ Deployment verification failed after 10 attempts with final status $HTTP_STATUS"
-      # #           exit 1
-      # #         fi
-      # #         sleep 30
-      # #       fi
-      # #     done
+      #       if [ $HTTP_STATUS -eq 200 ]; then
+      #         echo "✅ Deployment verification successful with status $HTTP_STATUS"
+      #         echo "Application URL: $APP_URL"
+      #         break
+      #       else
+      #         echo "Attempt $i: Received status $HTTP_STATUS, retrying in 30 seconds..."
+      #         if [ $i -eq 10 ]; then
+      #           echo "❌ Deployment verification failed after 10 attempts with final status $HTTP_STATUS"
+      #           exit 1
+      #         fi
+      #         sleep 30
+      #       fi
+      #     done
           
-      # #     echo "🎉 Deployment verified successfully"
-      # #   env:
-      # #     PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}      
+      #     echo "🎉 Deployment verified successfully"
+      #   env:
+      #     PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}      
 
       
 
-      # # - name: Send deployment notification
-      # #   if: success()
-      # #   uses: rtCamp/action-slack-notify@v2
-      # #   continue-on-error: true
-      # #   env:
-      # #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-      # #     SLACK_CHANNEL: deployments
-      # #     SLACK_COLOR: good
-      # #     SLACK_TITLE: "🐳 Containerized Deployment Successful: ${{ env.ENVIRONMENT }}"
-      # #     SLACK_MESSAGE: |
-      # #       FastAPI chatbot **containerized deployment** to **${{ env.ENVIRONMENT }}** environment successful! 🎉
+      # - name: Send deployment notification
+      #   if: success()
+      #   uses: rtCamp/action-slack-notify@v2
+      #   continue-on-error: true
+      #   env:
+      #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      #     SLACK_CHANNEL: deployments
+      #     SLACK_COLOR: good
+      #     SLACK_TITLE: "🐳 Containerized Deployment Successful: ${{ env.ENVIRONMENT }}"
+      #     SLACK_MESSAGE: |
+      #       FastAPI chatbot **containerized deployment** to **${{ env.ENVIRONMENT }}** environment successful! 🎉
 
-      # #       **Details:**
-      # #       • Branch: ${{ github.ref_name }}
-      # #       • Commit: ${{ github.sha }}
-      # #       • Container Image: `${{ env.IMAGE_URI }}`
-      # #       • ECR Repository: `${{ env.ECR_REPO_NAME }}`
-      # #       • Triggered by: ${{ github.actor }}
-      # #       • Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      # #     SLACK_USERNAME: GitHub Actions
+      #       **Details:**
+      #       • Branch: ${{ github.ref_name }}
+      #       • Commit: ${{ github.sha }}
+      #       • Container Image: `${{ env.IMAGE_URI }}`
+      #       • ECR Repository: `${{ env.ECR_REPO_NAME }}`
+      #       • Triggered by: ${{ github.actor }}
+      #       • Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      #     SLACK_USERNAME: GitHub Actions
 
-      # # - name: Send deployment notification (Failure)
-      # #   if: failure()
-      # #   uses: rtCamp/action-slack-notify@v2
-      # #   continue-on-error: true
-      # #   env:
-      # #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-      # #     SLACK_CHANNEL: deployments
-      # #     SLACK_COLOR: danger
-      # #     SLACK_TITLE: "❌ Containerized Deployment Failed: ${{ env.ENVIRONMENT }}"
-      # #     SLACK_MESSAGE: |
-      # #       FastAPI chatbot **containerized deployment** to **${{ env.ENVIRONMENT }}** environment failed
-      # #     SLACK_USERNAME: GitHub Actions
+      # - name: Send deployment notification (Failure)
+      #   if: failure()
+      #   uses: rtCamp/action-slack-notify@v2
+      #   continue-on-error: true
+      #   env:
+      #     SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+      #     SLACK_CHANNEL: deployments
+      #     SLACK_COLOR: danger
+      #     SLACK_TITLE: "❌ Containerized Deployment Failed: ${{ env.ENVIRONMENT }}"
+      #     SLACK_MESSAGE: |
+      #       FastAPI chatbot **containerized deployment** to **${{ env.ENVIRONMENT }}** environment failed
+      #     SLACK_USERNAME: GitHub Actions
