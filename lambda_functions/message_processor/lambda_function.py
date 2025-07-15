@@ -232,7 +232,17 @@ def lambda_handler(event, context):
         logger.info(f"✅ Lambda execution successful")
 
         # Update database
-        update_message_analysis(message_id, sentiment_data, db_config)
+        # TODO: Uncomment the following line to update the message in the database
+        """
+        In current implementation, the Lambda function is not placed in a VPC.
+        This means it can access AWS services like Comprehend and SSM without needing VPC endpoints or NAT gateways.
+        However, if you need to access resources inside a VPC (like an RDS database), you would need to place the Lambda in a VPC.
+        This is done by configuring the Lambda function to use a VPC and specifying the subnets and security groups.
+        In AWS, placing a Lambda function in a private subnet is necessary when your function needs to access resources 
+        that are only available inside your Virtual Private Cloud (VPC) and not publicly accessible.
+        Then your Lambda must be placed in a VPC and configured to use a private subnet where those resources live.
+        """
+        # update_message_analysis(message_id, sentiment_data, db_config)
 
         return {
             'statusCode': 200,
