@@ -310,39 +310,7 @@ pulumi.export("db_param_path", f"/{name}/{stack_name}/db")
 ssm_prefix = pulumi.Output.concat("/", name, "/", stack_name, "/db")
 
 
-## Process the user data script with environment variables
-# If you're using aws.ec2.Instance, you do not need to Base64 encode user_data manually. Pulumi does it for you.
-# If You ARE Using a Launch Template (e.g., for Auto Scaling), AWS expects Base64, but you need to manually wrap it into an Output
 
-# user_data = pulumi.Output.secret(
-#     user_data_template.replace("${DB_PARAM_PATH}", f"/{name}/{stack_name}/db")
-# )
-user_data = pulumi.Output.all(
-    ssm_prefix,
-    ecr_repository.repository_url,
-    ecr_repository.name,
-    aws.config.region
-).apply(
-    lambda args: user_data_template
-    .replace("${DB_SSM_PREFIX}", args[0])
-    .replace("${ECR_REPOSITORY_URL}", args[1])
-    .replace("${ECR_REPOSITORY_NAME}", args[2])
-    .replace("${AWS_REGION}", args[3])
-    .replace("${name}", name)  # Make sure to replace these as well
-    .replace("${stack_name}", stack_name)
-)
-user_data_base64 = user_data.apply(
-    lambda data: base64.b64encode(data.encode("utf-8")).decode("utf-8")
-)
-
-# Generate a hash of the user_data to trigger changes
-user_data_hash = user_data.apply(
-    lambda data: hashlib.sha256(data.encode('utf-8')).hexdigest()
-)
-# user_data_hash = pulumi.Output.apply(
-#     lambda data: hashlib.md5(data.encode("utf-8")).hexdigest(),
-#     user_data
-# )
 
 
 ## Create a policy for Secrets Manager access
@@ -441,8 +409,73 @@ message_processor_lambda = create_message_processor_lambda(
     deploy_stage=deploy_stage
 )
 
+# Add this after creating your EC2 role and before creating the instance profile
+
+# Create a policy for Lambda invocation
+lambda_invoke_policy = aws.iam.Policy(
+    f"{name}-{stack_name}-lambda-invoke-policy",
+    policy=pulumi.Output.all(message_processor_lambda['lambda_function'].arn).apply(
+        lambda args: json.dumps({
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "lambda:InvokeFunction"
+                    ],
+                    "Resource": args[0]  # The Lambda function ARN
+                }
+            ],
+        })
+    ),
+)
+
+# Attach the Lambda invoke policy to the EC2 role
+lambda_invoke_policy_attachment = aws.iam.RolePolicyAttachment(
+   f"{name}-{stack_name}-lambda-invoke-policy-attachment",
+    role=ec2_role.name,
+    policy_arn=lambda_invoke_policy.arn,
+)
 
 
+
+
+
+## Process the user data script with environment variables
+# If you're using aws.ec2.Instance, you do not need to Base64 encode user_data manually. Pulumi does it for you.
+# If You ARE Using a Launch Template (e.g., for Auto Scaling), AWS expects Base64, but you need to manually wrap it into an Output
+
+# user_data = pulumi.Output.secret(
+#     user_data_template.replace("${DB_PARAM_PATH}", f"/{name}/{stack_name}/db")
+# )
+user_data = pulumi.Output.all(
+    ssm_prefix,
+    ecr_repository.repository_url,
+    ecr_repository.name,
+    aws.config.region,
+    message_processor_lambda['lambda_function'].name
+).apply(
+    lambda args: user_data_template
+    .replace("${DB_SSM_PREFIX}", args[0])
+    .replace("${ECR_REPOSITORY_URL}", args[1])
+    .replace("${ECR_REPOSITORY_NAME}", args[2])
+    .replace("${AWS_REGION}", args[3])
+    .replace("${AWS_LAMBDA_FUNCTION_NAME}", args[4])
+    .replace("${name}", name)  # Make sure to replace these as well
+    .replace("${stack_name}", stack_name)
+)
+user_data_base64 = user_data.apply(
+    lambda data: base64.b64encode(data.encode("utf-8")).decode("utf-8")
+)
+
+# Generate a hash of the user_data to trigger changes
+user_data_hash = user_data.apply(
+    lambda data: hashlib.sha256(data.encode('utf-8')).hexdigest()
+)
+# user_data_hash = pulumi.Output.apply(
+#     lambda data: hashlib.md5(data.encode("utf-8")).hexdigest(),
+#     user_data
+# )
 
 
 

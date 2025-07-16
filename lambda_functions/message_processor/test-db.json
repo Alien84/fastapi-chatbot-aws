@@ -1,5 +1,0 @@
-{
-  "action": "test_psycopg2",
-  "database": "testdb",
-  "host": "localhost"
-}

@@ -95,6 +95,7 @@ def trigger_message_processing(message_id: int, content: str):
     """Trigger Lambda function for message processing"""
     try:
         lambda_client = boto3.client('lambda', region_name=os.environ.get('AWS_REGION', 'us-west-2'))
+        function_name = os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'message-processor-lambda')
         
         payload = {
             'message_id': message_id,
@@ -102,12 +103,12 @@ def trigger_message_processing(message_id: int, content: str):
         }
         
         response = lambda_client.invoke(
-            FunctionName='message-processor-lambda',
+            FunctionName=function_name,
             InvocationType='Event',  # Asynchronous invocation
             Payload=json.dumps(payload)
         )
         
-        logger.info(f"Triggered Lambda processing for message {message_id}")
+        logger.info(f"Triggered Lambda processing for message {message_id}, response: {response['StatusCode']}")
         return True
     
     except Exception as e:

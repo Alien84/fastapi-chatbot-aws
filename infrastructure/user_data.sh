@@ -61,6 +61,7 @@ services:
     environment:
       - DB_SSM_PREFIX=${DB_SSM_PREFIX}
       - AWS_REGION=${AWS_REGION}
+      - AWS_LAMBDA_FUNCTION_NAME=${AWS_LAMBDA_FUNCTION_NAME}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

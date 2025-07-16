@@ -7,7 +7,7 @@ def get_pulumi_outputs(stack_name='dev'):
     try:
         # Change to infrastructure directory
         original_dir = os.getcwd()
-        os.chdir('infrastructure')
+        os.chdir('/Users/aliakbari/Documents/fastapi-chatbot-aws/infrastructure')
         
         # Get Pulumi outputs
         result = subprocess.run(
@@ -40,7 +40,7 @@ def main():
         print(f"  {key}: {value}")
     
     # Extract Lambda function name if available
-    lambda_name = outputs.get('message_processor_lambda_name')
+    lambda_name = outputs.get('lambda_function_name')
     if lambda_name:
         print(f"\nLambda function name: {lambda_name}")
         print(f"Export command: export LAMBDA_FUNCTION_NAME={lambda_name}")

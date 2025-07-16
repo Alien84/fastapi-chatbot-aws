@@ -481,6 +481,7 @@ lsof -i :8000
 # If ports are in use, kill the processes or change ports in docker-compose.debug.yml
 ```
 
+
 **If you change the code and need to rebuild the model:**
 
 ```
@@ -489,12 +490,30 @@ docker compose -f docker-compose.debug.yml build --no-cache app-debug
 docker compose -f docker-compose.debug.yml up -d --force-recreate app-debug
 ```
 
+# Best Practice (Tests)
 
+**Get all pulumi outputs** 
 
-# Best Practice
+`python tests/infrastructure`
 
-**1. Get all pulumi outputs**
+**Get all pulumi outputs**
+
+`python tests/lambda_functions/test_lambda_direct.py`
+
+**Send a chat message via your API**
 
 ```
-python tests/lambda_functions/get_pulumi_outputs.py
+curl -X POST "http://your-load-balancer-url/chat" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "I love this chatbot! It is amazing and helpful."}'
+
+curl "http://your-load-balancer-url/message/1/sentiment"
+
+
 ```
+
+**Check CloudWatch Logs**
+
+`aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/message-processor"
+aws logs describe-log-streams --log-group-name "/aws/lambda/message-processor-lambda"
+aws logs get-log-events --log-group-name "/aws/lambda/message-processor-lambda" --log-stream-name "LATEST_STREAM_NAME"`

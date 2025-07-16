@@ -22,7 +22,7 @@ def find_lambda_function(base_name: str, region: str = 'eu-west-2'):
 def test_message_processor_direct():
     """Test Lambda function with direct invocation"""
     region = 'eu-west-2'  # Your actual region
-    base_function_name = 'message-processor-lambda'
+    base_function_name = 'chatbot-dev-message-processor'
     
     # Find the actual function name
     actual_function_name = find_lambda_function(base_function_name, region)
