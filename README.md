@@ -496,7 +496,7 @@ docker compose -f docker-compose.debug.yml up -d --force-recreate app-debug
 
 `python tests/infrastructure`
 
-**Get all pulumi outputs**
+**Test lambda function directly**
 
 `python tests/lambda_functions/test_lambda_direct.py`
 
@@ -517,3 +517,60 @@ curl "http://your-load-balancer-url/message/1/sentiment"
 `aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/message-processor"
 aws logs describe-log-streams --log-group-name "/aws/lambda/message-processor-lambda"
 aws logs get-log-events --log-group-name "/aws/lambda/message-processor-lambda" --log-stream-name "LATEST_STREAM_NAME"`
+
+
+
+### Local Testing Approaches
+
+A. Unit Testing (Isolated Component Testing) -- Test individual functions without AWS dependencies.
+
+```
+cd tests/unit
+python -m pytest test_message_processor_unit.py -v
+```
+
+B. Integration Testing with Local Database -- Test with a real database but mock AWS services.
+
+```
+cd tests/unit
+python -m pytest test_message_processor_integration.py -v
+```
+
+C. C. Local Lambda Runtime Simulation -- Test Lambda function with AWS Lambda Runtime Interface Emulator.
+
+```
+cd tests/unit
+python -m pytest test_with_runtime_emulator.py -v
+```
+
+
+### AWS Testing Approaches
+
+A. Direct Lambda Invocation Testing: -- Test deployed Lambda function directly in AWS.
+
+```
+cd tests/lambda
+python test_lambda_aws_direct.py
+```
+
+B. End-to-End Testing Through FastAPI: -- Test the complete workflow from API to Lambda.
+
+```
+cd tests/lambda
+python test_e2e_workflow.py
+```
+
+C. CloudWatch Monitoring and Alerting Tests: -- Test Lambda function monitoring and alerting.
+
+```
+cd tests/lambda
+python test_lambda_monitoring.py
+```
+
+
+### Load Testing and Stress Testing
+
+```
+cd tests/lambda
+python load_test_lambdag.py
+```
