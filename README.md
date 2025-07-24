@@ -490,9 +490,21 @@ docker compose -f docker-compose.debug.yml build --no-cache app-debug
 docker compose -f docker-compose.debug.yml up -d --force-recreate app-debug
 ```
 
-# Best Practice (Tests)
+# Best practices for tesing (Tests)
 
-**Get all pulumi outputs** 
+
+* **Test Isolation** : Each test is independent and can run alone
+* **Test Data Management** : Consistent test data across test suites
+* **Resource Cleanup** : Proper cleanup of containers, files, and connections
+* **Error Handling** : Comprehensive error scenario testing
+* **Performance Benchmarks** : Defined performance expectations
+* **Security Validation** : Multi-layered security testing
+* **Real Environment Testing** : Tests that mirror production conditions
+* **Comprehensive Coverage** : Testing all layers of the application stack
+
+## **General Tests**
+
+**Get all pulumi outputs**
 
 `python tests/infrastructure`
 
@@ -518,25 +530,25 @@ curl "http://your-load-balancer-url/message/1/sentiment"
 aws logs describe-log-streams --log-group-name "/aws/lambda/message-processor-lambda"
 aws logs get-log-events --log-group-name "/aws/lambda/message-processor-lambda" --log-stream-name "LATEST_STREAM_NAME"`
 
+## 1. Lambda Function Tesing
 
+#### -- Local Testing Approaches
 
-### Local Testing Approaches
-
-A. Unit Testing (Isolated Component Testing) -- Test individual functions without AWS dependencies.
+**A. Unit Testing (Isolated Component Testing)** -- Test individual functions without AWS dependencies.
 
 ```
 cd tests/unit
 python -m pytest test_message_processor_unit.py -v
 ```
 
-B. Integration Testing with Local Database -- Test with a real database but mock AWS services.
+**B. Integration Testing with Local Database** -- Test with a real database but mock AWS services.
 
 ```
 cd tests/unit
 python -m pytest test_message_processor_integration.py -v
 ```
 
-C. C. Local Lambda Runtime Simulation -- Test Lambda function with AWS Lambda Runtime Interface Emulator.
+**C. Local Lambda Runtime Simulation** -- Test Lambda function with AWS Lambda Runtime Interface Emulator.
 
 ```
 cd tests/unit
@@ -544,23 +556,23 @@ python -m pytest test_with_runtime_emulator.py -v
 ```
 
 
-### AWS Testing Approaches
+#### -- AWS Testing Approaches
 
-A. Direct Lambda Invocation Testing: -- Test deployed Lambda function directly in AWS.
+**A. Direct Lambda Invocation Testing:** -- Test deployed Lambda function directly in AWS.
 
 ```
 cd tests/lambda
 python test_lambda_aws_direct.py
 ```
 
-B. End-to-End Testing Through FastAPI: -- Test the complete workflow from API to Lambda.
+**B. End-to-End Testing Through FastAPI:** -- Test the complete workflow from API to Lambda.
 
 ```
 cd tests/lambda
 python test_e2e_workflow.py
 ```
 
-C. CloudWatch Monitoring and Alerting Tests: -- Test Lambda function monitoring and alerting.
+**C. CloudWatch Monitoring and Alerting Tests:** -- Test Lambda function monitoring and alerting.
 
 ```
 cd tests/lambda
@@ -568,9 +580,123 @@ python test_lambda_monitoring.py
 ```
 
 
-### Load Testing and Stress Testing
+#### -- Load Testing and Stress Testing
 
 ```
 cd tests/lambda
 python load_test_lambdag.py
+```
+
+
+## 2. Database Testing
+
+**A. Database Schema and Migration Testing** --- Ensure database schema is correct and migrations work properly.
+
+`tests/database/test_schema.py`
+
+**B. Database Data Testing**
+
+`tests/database/test_data_operations.py`
+
+
+## 3. FastAPI Application Testing
+
+**A. API Integration Testing**
+
+`tests/api/test_api_integration.py`
+
+**B. API Performance Testing**
+
+`tests/api/test_api_performance.py`
+
+
+## 4. Infrastructure Testing
+
+**A. Pulumi Infrastructure Testing**
+
+`tests/infrastructure/test_pulumi_stack.py`
+
+**B. Docker Container Testing**
+
+`tests/infrastructure/test_docker_containers.py`
+
+
+## 5. End-to-End Workflow Testing
+
+`tests/e2e/test_complete_workflow.py`
+
+## 6. Security Testing
+
+`tests/security/test_security.py`
+
+
+## 7. Monitoring and Observability Testing
+
+`tests/monitoring/test_observability.py`
+
+
+## 8. Backup and Recovery Testing
+
+`tests/backup/test_backup_recovery.py`
+
+
+# Running All Tests
+
+`tests/run_all_tests.py`
+
+```
+# Run specific test categories
+python -m pytest tests/database/ -v           # Database tests only
+python -m pytest tests/api/ -v               # API tests only
+python -m pytest tests/lambda/ -v            # Lambda tests only
+python -m pytest tests/security/ -v          # Security tests only
+python -m pytest tests/e2e/ -v               # E2E tests only
+
+# Run with coverage
+python -m pytest tests/ --cov=app --cov-report=html
+
+# Run performance tests only
+python -m pytest tests/ -k "performance" -v
+
+# Run tests with specific markers
+python -m pytest tests/ -m "slow" -v         # Only slow tests
+python -m pytest tests/ -m "not slow" -v     # Skip slow tests
+
+# Parallel test execution
+python -m pytest tests/ -n auto              # Auto-detect CPU cores
+```
+
+
+
+### Continuous Integration Integration:
+
+Add to your `.github/workflows/ci.yml`
+
+```
+- name: Run comprehensive test suite
+  run: |
+    # Install test dependencies
+    pip install -r tests/requirements.txt
+  
+    # Run fast tests first
+    python -m pytest tests/database tests/api tests/lambda -v
+  
+    # Run integration tests
+    python -m pytest tests/infrastructure tests/security -v
+  
+    # Run E2E tests (may be optional for PR builds)
+    python -m pytest tests/e2e -v
+
+- name: Generate test report
+  run: |
+    python scripts/run_all_tests.py > test_results.txt
+  
+- name: Upload test results
+  uses: actions/upload-artifact@v3
+  if: always()
+  with:
+    name: test-results
+    path: |
+      test_results.txt
+      htmlcov/
 ```
