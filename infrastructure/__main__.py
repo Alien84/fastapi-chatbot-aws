@@ -29,8 +29,8 @@ deploy_stage = config.get("deploy_stage", "ecr")
 lambda_image_uri = config.get("lambda_image_uri", "")
 lambda_image_tag = config.get("lambda_image_tag", "latest")
 
-api_gateway_lambda_image_uri = config.get("api_stats_image_tag", "")
-api_gateway_lambda_image_tag = config.get("api_stats_image_uri", "latest")
+api_gateway_lambda_image_uri = config.get("api_stats_image_uri", "")
+api_gateway_lambda_image_tag = config.get("api_stats_image_tag", "latest")
 
 stack_name = pulumi.get_stack()
 
