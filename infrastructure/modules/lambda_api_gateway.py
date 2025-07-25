@@ -39,19 +39,19 @@ def create_api_stats_lambda_function(
 
     # Create ECR repository for API stats Lambda (CI/CD pipeline will push to this)
     api_stats_ecr_repo = aws.ecr.Repository(
-        f"{name}-{stack_name}-lambda-api-stats",
-        name=f"{name}-{stack_name}-lambda-api-stats",
+        f"{name}-{stack_name}-lambda-api-gateway",
+        name=f"{name}-{stack_name}-lambda-api-gateway",
         image_tag_mutability="MUTABLE",
         image_scanning_configuration=aws.ecr.RepositoryImageScanningConfigurationArgs(
             scan_on_push=True,
         ),
         force_delete=True,  # Allow deletion even if images exist
-        tags={"Name": f"{name}-{stack_name}-lambda-api-stats"}
+        tags={"Name": f"{name}-{stack_name}-lambda-api-gateway"}
     )
     
     # Create IAM role for Lambda
     lambda_role = aws.iam.Role(
-        f"{name}-{stack_name}-api-stats-lambda-role",
+        f"{name}-{stack_name}-api-gateway-lambda-role",
         assume_role_policy=json.dumps({
             "Version": "2012-10-17",
             "Statement": [{
@@ -62,12 +62,12 @@ def create_api_stats_lambda_function(
                 },
             }],
         }),
-        tags={"Name": f"{name}-{stack_name}-api-stats-lambda-role"}
+        tags={"Name": f"{name}-{stack_name}-api-gateway-lambda-role"}
     )
 
     # Create custom policy for SSM and ECR access
     lambda_policy = aws.iam.Policy(
-        f"{name}-{stack_name}-api-stats-lambda-policy",
+        f"{name}-{stack_name}-api-gateway-lambda-policy",
         policy=pulumi.Output.all(api_stats_ecr_repo.arn, account_id).apply(
             lambda args: json.dumps({
                 "Version": "2012-10-17",
@@ -112,12 +112,12 @@ def create_api_stats_lambda_function(
                 ]
             })
         ),
-        tags={"Name": f"{name}-{stack_name}-api-stats-lambda-policy"}
+        tags={"Name": f"{name}-{stack_name}-api-gateway-lambda-policy"}
     )
 
     # Create ECR repository policy to allow Lambda service to pull images
     ecr_policy = aws.ecr.RepositoryPolicy(
-        f"{name}-{stack_name}-api-stats-ecr-policy",
+        f"{name}-{stack_name}-api-gateway-ecr-policy",
         repository=api_stats_ecr_repo.name,
         policy=pulumi.Output.all(lambda_role.arn, account_id).apply(
             lambda args: json.dumps({
@@ -157,7 +157,7 @@ def create_api_stats_lambda_function(
 
     # Create a lifecycle policy to manage image retention
     ecr_lifecycle_policy = aws.ecr.LifecyclePolicy(
-        f"{name}-{stack_name}-api-stats-ecr-lifecycle",
+        f"{name}-{stack_name}-api-gateway-ecr-lifecycle",
         repository=api_stats_ecr_repo.name,
         # policy=json.dumps({
         #     "rules": [
@@ -210,20 +210,20 @@ def create_api_stats_lambda_function(
 
     # Attach AWS managed policies
     basic_execution_attachment = aws.iam.RolePolicyAttachment(
-        f"{name}-{stack_name}-api-stats-basic-execution",
+        f"{name}-{stack_name}-api-gateway-basic-execution",
         role=lambda_role.name,
         policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
     )
     
     vpc_execution_attachment = aws.iam.RolePolicyAttachment(
-        f"{name}-{stack_name}-api-stats-vpc-execution",
+        f"{name}-{stack_name}-api-gateway-vpc-execution",
         role=lambda_role.name,
         policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
     )
     
     # Attach custom policy
     custom_policy_attachment = aws.iam.RolePolicyAttachment(
-        f"{name}-{stack_name}-api-stats-custom-policy",
+        f"{name}-{stack_name}-api-gateway-custom-policy",
         role=lambda_role.name,
         policy_arn=lambda_policy.arn
     )
@@ -234,13 +234,13 @@ def create_api_stats_lambda_function(
     pulumi.export("api_stats_ecr_repo_arn", api_stats_ecr_repo.arn)
     
     # Construct image URI - CI/CD pipeline should push image with this URI
-    # image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-api-stats:latest"
+    # image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-api-gateway:latest"
     pulumi.export("api_stats_image_uri", image_uri)
 
     if deploy_stage in ["lambda", "all"]:
         # Create Lambda function
         lambda_function = aws.lambda_.Function(
-            f"{name}-{stack_name}-api-stats",
+            f"{name}-{stack_name}-api-gateway",
             # Container image configuration
             package_type="Image",
             image_uri=image_uri,
@@ -277,7 +277,7 @@ def create_api_stats_lambda_function(
             
             # Tags
             tags={
-                "Name": f"{name}-{stack_name}-api-stats",
+                "Name": f"{name}-{stack_name}-api-gateway",
                 "Environment": stack_name
             }
         )
