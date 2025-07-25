@@ -247,7 +247,7 @@ jobs:
         id: build-push-api-stats-lambda
         if: env.API_STATS_ECR_URL != ''
         run: |
-          cd lambda_functions_docker/api_stats
+          cd lambda_functions/api_gateway
           
           # Create image tags
           API_STATS_IMAGE_TAG_LATEST="${{ env.API_STATS_ECR_URL }}:latest"
