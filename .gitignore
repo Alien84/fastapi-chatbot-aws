@@ -223,7 +223,6 @@ infrastructure/github_root_cert.pem
 .git
 .gitignore
 README.md
-Dockerfile
 .dockerignore
 .pytest_cache
 .coverage
