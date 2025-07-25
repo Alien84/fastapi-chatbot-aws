@@ -9,6 +9,8 @@ from modules.vpc import create_vpc
 from modules.rds import create_rds_instance
 from modules.secrets import create_secrets_with_kms, create_ssm_secrets
 from modules.lambda_functions import create_message_processor_lambda
+from modules.lambda_api_gateway import create_api_stats_lambda_function, create_api_gateway_with_lambda
+
 
 
 
@@ -26,6 +28,9 @@ name = infra_config.require("name") # "chatbot"
 deploy_stage = config.get("deploy_stage", "ecr")
 lambda_image_uri = config.get("lambda_image_uri", "")
 lambda_image_tag = config.get("lambda_image_tag", "latest")
+
+api_gateway_lambda_image_uri = config.get("api_stats_image_tag", "")
+api_gateway_lambda_image_tag = config.get("api_stats_image_uri", "latest")
 
 stack_name = pulumi.get_stack()
 
@@ -409,6 +414,19 @@ message_processor_lambda = create_message_processor_lambda(
     deploy_stage=deploy_stage
 )
 
+api_stats_lambda_resources = create_api_stats_lambda_function(
+    name=name,
+    stack_name=stack_name,
+    db_ssm_prefix=pulumi.Output.concat("/", name, "/", stack_name, "/db"),
+    vpc_id=network["vpc"].id,
+    subnet_ids=[subnet.id for subnet in network["private_subnets"]],
+    security_group_id=db_sg.id,
+    region=region,
+    image_uri=api_gateway_lambda_image_uri,
+    image_tag=api_gateway_lambda_image_tag,
+    deploy_stage=deploy_stage  # Only create ECR repo initially
+)
+
 
 if deploy_stage in ["lambda", "all"]:
 
@@ -437,6 +455,27 @@ if deploy_stage in ["lambda", "all"]:
         role=ec2_role.name,
         policy_arn=lambda_invoke_policy.arn,
     )
+
+    api_stats_lambda_resources = create_api_stats_lambda_function(
+        name=name,
+        stack_name=stack_name,
+        db_ssm_prefix=pulumi.Output.concat("/", name, "/", stack_name, "/db"),
+        vpc_id=network["vpc"].id,
+        subnet_ids=[subnet.id for subnet in network["private_subnets"]],
+        security_group_id=db_sg.id,
+        region=region,  
+        image_uri=api_gateway_lambda_image_uri,
+        image_tag=api_gateway_lambda_image_tag,
+        deploy_stage=deploy_stage
+    )
+
+    # Create API Gateway with Lambda integration
+    if api_stats_lambda_resources.get("lambda_function"):
+        api_gateway = create_api_gateway_with_lambda(
+            api_stats_lambda_resources["lambda_function"],
+            api_name="chatbot-stats-api",
+            stack_name=stack_name
+        )
 
 
 

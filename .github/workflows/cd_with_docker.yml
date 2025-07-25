@@ -136,7 +136,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Set the pulumi environment variable for initial ECR deployment (This is set for lambda ecr, can bb extended for other ecrs)
+      # Set the pulumi environment variable for initial ECR deployment (This is set for lambda ecr, can be extended for other ecrs)
       - name: Set Pulumi config for initial ECR deployment
         run: |
           cd infrastructure
@@ -162,28 +162,42 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
       
-      
-      # Get ECR repository URL from Pulumi output
-      - name: Get Lambda ECR repository URL
-        id: get-lambda-ecr-url
+      # Get ECR repository URLs from Pulumi output (both lambdas)
+      - name: Get Lambda ECR repository URLs
+        id: get-lambda-ecr-urls
         run: |
           cd infrastructure
           pulumi stack select ${{ env.ENVIRONMENT }}
+
+          # Get Message Processor Lambda ECR URL
           LAMBDA_ECR_URL=$(pulumi stack output lambda_ecr_repo_url)
           echo "LAMBDA_ECR_URL=$LAMBDA_ECR_URL" >> $GITHUB_ENV
-          echo "LAMBDA ECR repository URL: $LAMBDA_ECR_URL"
+          echo "Message Processor Lambda ECR repository URL: $LAMBDA_ECR_URL"
           
-          # Also extract the repository name for cleanup purposes
+          # Extract the repository name for cleanup purposes
           LAMBDA_ECR_REPO_NAME=$(echo $LAMBDA_ECR_URL | cut -d'/' -f2)
           echo "LAMBDA_ECR_REPO_NAME=$LAMBDA_ECR_REPO_NAME" >> $GITHUB_ENV
-          echo "ECR repository name: $LAMBDA_ECR_REPO_NAME"
+          echo "Message Processor ECR repository name: $LAMBDA_ECR_REPO_NAME"
+
+          # Get API Stats Lambda ECR URL (if it exists)
+          API_STATS_ECR_URL=$(pulumi stack output api_stats_ecr_repo_url 2>/dev/null || echo "")
+          if [ -n "$API_STATS_ECR_URL" ]; then
+            echo "API_STATS_ECR_URL=$API_STATS_ECR_URL" >> $GITHUB_ENV
+            echo "API Stats Lambda ECR repository URL: $API_STATS_ECR_URL"
+            
+            # Extract the repository name for cleanup purposes
+            API_STATS_ECR_REPO_NAME=$(echo $API_STATS_ECR_URL | cut -d'/' -f2)
+            echo "API_STATS_ECR_REPO_NAME=$API_STATS_ECR_REPO_NAME" >> $GITHUB_ENV
+            echo "API Stats ECR repository name: $API_STATS_ECR_REPO_NAME"
+          else
+            echo "API Stats Lambda ECR repository not found (may not be deployed yet)"
+          fi
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
 
-
-      # Build and push Docker image
-      - name: Build and push Docker Lambda image
-        id: build-push-Lambda
+      # Build and push Message Processor Lambda Docker image (existing)
+      - name: Build and push Message Processor Lambda image
+        id: build-push-message-processor-lambda
         run: |
           cd lambda_functions/message_processor
           
@@ -192,7 +206,7 @@ jobs:
           LAMBDA_IMAGE_TAG_COMMIT="${{ env.LAMBDA_ECR_URL }}:${{ github.sha }}"
           LAMBDA_IMAGE_TAG_ENV="${{ env.LAMBDA_ECR_URL }}:${{ env.ENVIRONMENT }}-latest"
           
-          echo "Building Docker Lambda image..."
+          echo "Building Message Processor Lambda Docker image..."
           echo "Latest tag: $LAMBDA_IMAGE_TAG_LATEST"
           echo "Commit tag: $LAMBDA_IMAGE_TAG_COMMIT"
           echo "Environment tag: $LAMBDA_IMAGE_TAG_ENV"
@@ -203,51 +217,114 @@ jobs:
             --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
             --build-arg VCS_REF=${{ github.sha }} \
             --build-arg VERSION=${{ env.ENVIRONMENT }}-${{ github.sha }} \
-            -t temp-lambda-image \
+            -t temp-message-processor-lambda \
             --load \
             .
 
           # Tag the image with all required tags
-          docker tag temp-lambda-image $LAMBDA_IMAGE_TAG_LATEST
-          docker tag temp-lambda-image $LAMBDA_IMAGE_TAG_COMMIT
-          docker tag temp-lambda-image $LAMBDA_IMAGE_TAG_ENV
+          docker tag temp-message-processor-lambda $LAMBDA_IMAGE_TAG_LATEST
+          docker tag temp-message-processor-lambda $LAMBDA_IMAGE_TAG_COMMIT
+          docker tag temp-message-processor-lambda $LAMBDA_IMAGE_TAG_ENV
           
           # Push all tags
-          echo "Pushing Docker images..."
+          echo "Pushing Message Processor Lambda Docker images..."
           docker push $LAMBDA_IMAGE_TAG_LATEST
           docker push $LAMBDA_IMAGE_TAG_COMMIT
           docker push $LAMBDA_IMAGE_TAG_ENV
 
           # Clean up local temp image
-          docker rmi temp-lambda-image || true
+          docker rmi temp-message-processor-lambda || true
 
-          echo "Docker image pushed successfully"
+          echo "Message Processor Lambda Docker image pushed successfully"
           
           # Set output for later steps
           echo "LAMBDA_IMAGE_URI=$LAMBDA_IMAGE_TAG_LATEST" >> $GITHUB_ENV
           echo "LAMBDA_IMAGE_TAG=latest" >> $GITHUB_ENV
-          echo "Lambda Image URI: $LAMBDA_IMAGE_TAG_LATEST"
+          echo "Message Processor Lambda Image URI: $LAMBDA_IMAGE_TAG_LATEST"
 
+      # Build and push API Stats Lambda Docker image (new)
+      - name: Build and push API Stats Lambda image
+        id: build-push-api-stats-lambda
+        if: env.API_STATS_ECR_URL != ''
+        run: |
+          cd lambda_functions_docker/api_stats
+          
+          # Create image tags
+          API_STATS_IMAGE_TAG_LATEST="${{ env.API_STATS_ECR_URL }}:latest"
+          API_STATS_IMAGE_TAG_COMMIT="${{ env.API_STATS_ECR_URL }}:${{ github.sha }}"
+          API_STATS_IMAGE_TAG_ENV="${{ env.API_STATS_ECR_URL }}:${{ env.ENVIRONMENT }}-latest"
+          
+          echo "Building API Stats Lambda Docker image..."
+          echo "Latest tag: $API_STATS_IMAGE_TAG_LATEST"
+          echo "Commit tag: $API_STATS_IMAGE_TAG_COMMIT"
+          echo "Environment tag: $API_STATS_IMAGE_TAG_ENV"
+          
+          # Build the Docker image with multiple tags
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg VCS_REF=${{ github.sha }} \
+            --build-arg VERSION=${{ env.ENVIRONMENT }}-${{ github.sha }} \
+            -t temp-api-stats-lambda \
+            --load \
+            .
+
+          # Tag the image with all required tags
+          docker tag temp-api-stats-lambda $API_STATS_IMAGE_TAG_LATEST
+          docker tag temp-api-stats-lambda $API_STATS_IMAGE_TAG_COMMIT
+          docker tag temp-api-stats-lambda $API_STATS_IMAGE_TAG_ENV
+          
+          # Push all tags
+          echo "Pushing API Stats Lambda Docker images..."
+          docker push $API_STATS_IMAGE_TAG_LATEST
+          docker push $API_STATS_IMAGE_TAG_COMMIT
+          docker push $API_STATS_IMAGE_TAG_ENV
+
+          # Clean up local temp image
+          docker rmi temp-api-stats-lambda || true
+
+          echo "API Stats Lambda Docker image pushed successfully"
+          
+          # Set output for later steps
+          echo "API_STATS_IMAGE_URI=$API_STATS_IMAGE_TAG_LATEST" >> $GITHUB_ENV
+          echo "API_STATS_IMAGE_TAG=latest" >> $GITHUB_ENV
+          echo "API Stats Lambda Image URI: $API_STATS_IMAGE_TAG_LATEST"
+
+      # Wait for ECR to process images
+      - name: Wait for ECR processing
+        run: |
           echo "Waiting 10 seconds for ECR to process the images..."
           sleep 10
-          echo "Build and push for lambda function process completed"
+          echo "ECR processing wait completed"
 
-
-      # Set the pulumi environment variable for final deployment
+        # Set the pulumi environment variable for final deployment
       - name: Set Pulumi config for final deployment
         run: |
           cd infrastructure
           PROJECT_NAME=$(grep '^name:' Pulumi.yaml | awk '{print $2}' | tr -d '"')
+
+          # Configure Message Processor Lambda
           pulumi config set ${PROJECT_NAME}:deploy_stage lambda --stack ${{ env.ENVIRONMENT }}
           pulumi config set ${PROJECT_NAME}:lambda_image_tag ${{ env.LAMBDA_IMAGE_TAG }} --stack ${{ env.ENVIRONMENT }}
           pulumi config set ${PROJECT_NAME}:lambda_image_uri ${{ env.LAMBDA_IMAGE_URI }} --stack ${{ env.ENVIRONMENT }}
 
+          # Configure API Stats Lambda (if built)
+          if [ -n "${{ env.API_STATS_IMAGE_URI }}" ]; then
+            echo "Setting API Stats Lambda configuration..."
+            pulumi config set ${PROJECT_NAME}:api_stats_image_tag ${{ env.API_STATS_IMAGE_TAG }} --stack ${{ env.ENVIRONMENT }}
+            pulumi config set ${PROJECT_NAME}:api_stats_image_uri ${{ env.API_STATS_IMAGE_URI }} --stack ${{ env.ENVIRONMENT }}
+            echo "API Stats Lambda configuration set"
+          else
+            echo "API Stats Lambda not built, skipping configuration"
+          fi
+          
+          echo "Pulumi configuration completed"
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
       
-      # Deploy infrastructure first to ensure ECR repository exists
-      - name: Deploy infrastructure with Pulumi
-        id: deploy-infrastructure
+      # Deploy final infrastructure with Lambda functions
+      - name: Deploy final Lambda infrastructure with Pulumi
+        id: deploy-lambda-infrastructure
         uses: pulumi/actions@v5
         with:
           command: up
@@ -262,6 +339,48 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
 
+      # Verify deployments
+      - name: Verify Lambda deployments
+        run: |
+          cd infrastructure
+          pulumi stack select ${{ env.ENVIRONMENT }}
+          
+          # Check Message Processor Lambda
+          MESSAGE_PROCESSOR_FUNCTION_NAME=$(pulumi stack output lambda_function_name 2>/dev/null || echo "")
+          if [ -n "$MESSAGE_PROCESSOR_FUNCTION_NAME" ]; then
+            echo "✅ Message Processor Lambda deployed: $MESSAGE_PROCESSOR_FUNCTION_NAME"
+          else
+            echo "❌ Message Processor Lambda deployment failed or not found"
+          fi
+          
+          # Check API Stats Lambda
+          API_STATS_FUNCTION_NAME=$(pulumi stack output api_stats_function_name 2>/dev/null || echo "")
+          if [ -n "$API_STATS_FUNCTION_NAME" ]; then
+            echo "✅ API Stats Lambda deployed: $API_STATS_FUNCTION_NAME"
+          else
+            echo "ℹ️ API Stats Lambda not deployed (may be intentional)"
+          fi
+          
+          # Check API Gateway
+          API_GATEWAY_URL=$(pulumi stack output api_gateway_url 2>/dev/null || echo "")
+          if [ -n "$API_GATEWAY_URL" ]; then
+            echo "✅ API Gateway deployed: $API_GATEWAY_URL"
+            
+            # Test the API Gateway endpoint
+            echo "Testing API Gateway endpoint..."
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$API_GATEWAY_URL?days=7" || echo "000")
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo "✅ API Gateway test successful (HTTP $HTTP_STATUS)"
+            else
+              echo "⚠️ API Gateway test failed (HTTP $HTTP_STATUS)"
+            fi
+          else
+            echo "ℹ️ API Gateway not deployed (may be intentional)"
+          fi
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      
       # Get ECR repository URL from Pulumi output
       - name: Get ECR repository URL
         id: get-ecr-url

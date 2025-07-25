@@ -197,7 +197,6 @@ Sometimes the Console test interface has issues. Check logs directly:
 
 If you see  **no log entries at all** , the function isn't even starting, which suggests a deployment issue.
 
-
 ## Professional Way to Setup a Lambda Function Using Docker
 
 Note that we are going to build an image compatible with amzon linux. **Docker image for Lambda** : Should be `amd64` (x86_64) or `arm64` (if using ARM Lambda)
@@ -242,7 +241,6 @@ curl -XPOST "http://localhost:9000/2015-03-31/functions/function/invocations" \
 docker stop $(docker ps -q --filter ancestor=lambda-psycopg2-test)
 ```
 
-
 ```
 `${LAMBDA_TASK_ROOT}` is an **environment variable** that AWS Lambda provides in its base container images. It points to the directory where your Lambda function code should be placed. Default value is 
 
@@ -261,7 +259,6 @@ echo $LAMBDA_TASK_ROOT
 ls -la $LAMBDA_TASK_ROOT
 # Should show: lambda_function.py, requirements.txt, and installed packages
 ```
-
 
 **Step 2 (alternative): Clean and Rebuild with Explicit Platform Using Docker Compose**
 
@@ -309,7 +306,6 @@ docker inspect ${IMAGE_NAME}:latest --format='{{.Os}}/{{.Architecture}}'
 echo "Build completed! Image details:"
 docker images | grep ${IMAGE_NAME}
 ```
-
 
 **Verify Build Success (3 ways)**
 
@@ -364,7 +360,6 @@ docker run --platform linux/amd64 --rm --entrypoint ls ${IMAGE_NAME}:latest -la
 # Check Python packages
 docker run --platform linux/amd64 --rm --entrypoint pip ${IMAGE_NAME}:latest list | grep -E "(psycopg2|boto3)"
 ```
-
 
 **Step 3: Complete Guide with AWS CLI Lambda Function Creation**
 
@@ -453,7 +448,6 @@ echo "Role ARN: $ROLE_ARN"
 sleep 10
 ```
 
-
 **Create Lambda Function Using AWS CLI**
 
 ```
@@ -539,7 +533,6 @@ aws lambda get-function \
     --region ${AWS_REGION} \
     --query 'Configuration.{Name:FunctionName,Runtime:Runtime,Handler:Handler,Timeout:Timeout,Memory:MemorySize,Architecture:Architectures[0]}'
 ```
-
 
 **Test Lambda Function with Log Handling**
 
@@ -636,4 +629,24 @@ else
             --query 'Configuration.LastUpdateStatus'
     fi
 fi
+```
+
+
+# Lambda Example 3: API Gateway with Lambda Backend
+
+## What This Example Does
+
+This example creates a **serverless API endpoint** that provides **chatbot usage statistics** without going through your main FastAPI application. It demonstrates:
+
+1. **Serverless Architecture** : API Gateway + Lambda (no EC2 instances needed)
+2. **Database Analytics** : Complex queries for business intelligence
+3. **RESTful API Design** : Clean API endpoints with query parameters
+4. **AWS Service Integration** : API Gateway routing requests to Lambda functions
+
+```
+Internet → API Gateway → Lambda Function → Database
+    ↓           ↓            ↓              ↓
+  Users      Routes to    Analyzes data   PostgreSQL
+  request    Lambda       and returns     Database
+  /stats                  statistics
 ```
