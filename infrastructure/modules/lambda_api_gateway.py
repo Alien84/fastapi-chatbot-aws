@@ -374,7 +374,7 @@ def create_api_gateway_with_lambda(lambda_function, api_name="chatbot-stats-api"
         resource_id=stats_resource.id,
         http_method=stats_options_method.http_method,
         status_code="200",
-        response_headers={
+        response_parameters={  # Changed from response_headers to response_parameters
             "method.response.header.Access-Control-Allow-Origin": True,
             "method.response.header.Access-Control-Allow-Methods": True,
             "method.response.header.Access-Control-Allow-Headers": True,
@@ -388,7 +388,7 @@ def create_api_gateway_with_lambda(lambda_function, api_name="chatbot-stats-api"
         resource_id=stats_resource.id,
         http_method=stats_options_method.http_method,
         status_code="200",
-        response_headers={
+        response_parameters={  # Changed from response_headers to response_parameters
             "method.response.header.Access-Control-Allow-Origin": "'*'",
             "method.response.header.Access-Control-Allow-Methods": "'GET,OPTIONS'",
             "method.response.header.Access-Control-Allow-Headers": "'Content-Type'",
