@@ -456,19 +456,6 @@ if deploy_stage in ["lambda", "all"]:
         policy_arn=lambda_invoke_policy.arn,
     )
 
-    api_stats_lambda_resources = create_api_stats_lambda_function(
-        name=name,
-        stack_name=stack_name,
-        db_ssm_prefix=pulumi.Output.concat("/", name, "/", stack_name, "/db"),
-        vpc_id=network["vpc"].id,
-        subnet_ids=[subnet.id for subnet in network["private_subnets"]],
-        security_group_id=db_sg.id,
-        region=region,  
-        image_uri=api_gateway_lambda_image_uri,
-        image_tag=api_gateway_lambda_image_tag,
-        deploy_stage=deploy_stage
-    )
-
     # Create API Gateway with Lambda integration
     if api_stats_lambda_resources.get("lambda_function"):
         api_gateway = create_api_gateway_with_lambda(
