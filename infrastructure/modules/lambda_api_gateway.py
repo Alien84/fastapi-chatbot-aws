@@ -409,13 +409,19 @@ def create_api_gateway_with_lambda(lambda_function, api_name="chatbot-stats-api"
     deployment = aws.apigateway.Deployment(
         f"{stack_name}-api-deployment",
         rest_api=api.id,
-        stage_name="prod",
         opts=pulumi.ResourceOptions(
             depends_on=[
                 stats_integration,
                 stats_options_integration_response
             ]
         ),
+    )
+
+    stage = aws.apigateway.Stage(
+        f"{stack_name}-api-stage",
+        rest_api=api.id,
+        deployment=deployment.id,
+        stage_name="prod",
     )
 
     # Construct API URL
@@ -430,5 +436,6 @@ def create_api_gateway_with_lambda(lambda_function, api_name="chatbot-stats-api"
     return {
         "api": api,
         "deployment": deployment,
-        "api_url": api_url
+        "stage": stage,
+        "api_url": api_url,
     }
