@@ -234,8 +234,8 @@ def create_api_stats_lambda_function(
     pulumi.export("api_stats_ecr_repo_arn", api_stats_ecr_repo.arn)
     
     # Construct image URI - CI/CD pipeline should push image with this URI
-    # image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-api-gateway:latest"
-    pulumi.export("api_stats_image_uri", image_uri)
+    image_uri =  "555576841436.dkr.ecr.eu-west-2.amazonaws.com/chatbot-dev-lambda-api-gateway:latest"
+    # pulumi.export("api_stats_image_uri", image_uri)
 
     if deploy_stage in ["lambda", "all"]:
         # Create Lambda function
