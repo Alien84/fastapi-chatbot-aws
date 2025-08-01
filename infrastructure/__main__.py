@@ -464,6 +464,9 @@ if deploy_stage in ["lambda", "all"]:
             stack_name=stack_name
         )
 
+        pulumi.export("stats_api_url", api_gateway["api_url"])
+        pulumi.export("stats_lambda_name", api_stats_lambda_resources['lambda_function'].name)
+
 
 
 
