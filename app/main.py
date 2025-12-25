@@ -92,25 +92,31 @@ def get_database_config():
     return None
 
 def trigger_message_processing(message_id: int, content: str):
-    """Trigger Lambda function for message processing"""
+    """Trigger Lambda function for message processing (if Lambda is deployed)"""
+    # Check if Lambda function is configured
+    function_name = os.environ.get('AWS_LAMBDA_FUNCTION_NAME', '').strip()
+
+    if not function_name:
+        logger.info(f"Lambda function not configured, skipping async processing for message {message_id}")
+        return False
+
     try:
         lambda_client = boto3.client('lambda', region_name=os.environ.get('AWS_REGION', 'us-west-2'))
-        function_name = os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'message-processor-lambda')
-        
+
         payload = {
             'message_id': message_id,
             'content': content
         }
-        
+
         response = lambda_client.invoke(
             FunctionName=function_name,
             InvocationType='Event',  # Asynchronous invocation
             Payload=json.dumps(payload)
         )
-        
+
         logger.info(f"Triggered Lambda processing for message {message_id}, response: {response['StatusCode']}")
         return True
-    
+
     except Exception as e:
         logger.error(f"Failed to trigger Lambda processing: {e}")
         return False

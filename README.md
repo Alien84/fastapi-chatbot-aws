@@ -451,7 +451,7 @@ chmod +x scripts/dev_status.sh
 **How to Use Debug Mode**
 
 Method 1: Using Debug Scripts
-
+ 
 1. Start debug environment: `./scripts/debug_start.sh`
 2. Set breakpoints in your Python code in VS Code
 3. Select "Debug FastAPI in Docker" and ply debugging method

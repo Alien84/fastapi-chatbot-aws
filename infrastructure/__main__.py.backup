@@ -405,8 +405,7 @@ ssm_managed_policy_attachment = aws.iam.RolePolicyAttachment(
 message_processor_lambda = None
 api_stats_lambda_resources = None
 
-if deploy_stage == "lambda":
-    # Create Lambda functions (actual functions with code)
+if deploy_stage in ["lambda", "all"]:
     message_processor_lambda = create_message_processor_lambda(
         name=name,
         stack_name=stack_name,
@@ -432,6 +431,36 @@ if deploy_stage == "lambda":
         image_tag=api_gateway_lambda_image_tag,
         deploy_stage=deploy_stage
     )
+else:
+    # When not deploying Lambda, still create ECR repos for Lambda images
+    message_processor_lambda = create_message_processor_lambda(
+        name=name,
+        stack_name=stack_name,
+        db_ssm_prefix=ssm_prefix,
+        vpc_id=network["vpc"].id,
+        subnet_ids=[subnet.id for subnet in network["private_subnets"]],
+        security_group_id=db_sg.id,
+        region=region,
+        image_uri=lambda_image_uri,
+        image_tag=lambda_image_tag,
+        deploy_stage=deploy_stage  # Will only create ECR repo
+    )
+
+    api_stats_lambda_resources = create_api_stats_lambda_function(
+        name=name,
+        stack_name=stack_name,
+        db_ssm_prefix=pulumi.Output.concat("/", name, "/", stack_name, "/db"),
+        vpc_id=network["vpc"].id,
+        subnet_ids=[subnet.id for subnet in network["private_subnets"]],
+        security_group_id=db_sg.id,
+        region=region,
+        image_uri=api_gateway_lambda_image_uri,
+        image_tag=api_gateway_lambda_image_tag,
+        deploy_stage=deploy_stage  # Will only create ECR repo
+    )
+
+
+if deploy_stage in ["lambda", "all"]:
 
     # Create a policy for Lambda invocation
     lambda_invoke_policy = aws.iam.Policy(
@@ -470,11 +499,10 @@ if deploy_stage == "lambda":
         pulumi.export("stats_api_url", api_gateway["api_url"])
         pulumi.export("stats_lambda_name", api_stats_lambda_resources['lambda_function'].name)
 
-# END OF LAMBDA-SPECIFIC RESOURCES
-# EC2 and application infrastructure below can be created with or without Lambda
 
-# Only create EC2 infrastructure if we're not in ECR-only stage
-if deploy_stage != "ecr":
+
+
+
     ## Process the user data script with environment variables
     # If you're using aws.ec2.Instance, you do not need to Base64 encode user_data manually. Pulumi does it for you.
     # If You ARE Using a Launch Template (e.g., for Auto Scaling), AWS expects Base64, but you need to manually wrap it into an Output
